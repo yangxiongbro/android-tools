@@ -7,7 +7,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
@@ -28,6 +30,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,6 +56,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.screenrecorder.app.apps.ForegroundAppMonitor
+import com.screenrecorder.app.capture.FloatingControl
 import com.screenrecorder.app.core.CaptureMode
 import com.screenrecorder.app.core.RecorderController
 import com.screenrecorder.app.core.RecorderSettings
@@ -90,9 +94,24 @@ fun RecorderApp() {
     var countdown by remember { mutableIntStateOf(0) }
     var startSignal by remember { mutableIntStateOf(0) }
     var hasUsageAccess by remember { mutableStateOf(foregroundMonitor.hasPermission()) }
+    var canDrawOverlays by remember { mutableStateOf(FloatingControl.canDrawOverlays(context)) }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         hasUsageAccess = foregroundMonitor.hasPermission()
+        canDrawOverlays = FloatingControl.canDrawOverlays(context)
+    }
+
+    val requestOverlayPermission: () -> Unit = {
+        runCatching {
+            context.startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:${context.packageName}"),
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }.onFailure {
+            Toast.makeText(context, "无法打开悬浮窗权限设置", Toast.LENGTH_SHORT).show()
+        }
     }
 
     val projectionLauncher = rememberLauncherForActivityResult(
@@ -164,6 +183,19 @@ fun RecorderApp() {
 
     LaunchedEffect(startSignal) {
         if (startSignal == 0) return@LaunchedEffect
+        if (settings.floatingControl && !canDrawOverlays) {
+            // Do not block the recording, just tell the user why the floating button is missing.
+            scope.launch {
+                val result = snackbarHostState.showSnackbar(
+                    message = "未授予悬浮窗权限，本次录制不显示悬浮按钮",
+                    actionLabel = "去授权",
+                    withDismissAction = true,
+                )
+                if (result == SnackbarResult.ActionPerformed) {
+                    requestOverlayPermission()
+                }
+            }
+        }
         for (value in settings.countdownSeconds downTo 1) {
             countdown = value
             delay(1_000L)
@@ -228,6 +260,7 @@ fun RecorderApp() {
                     SettingsScreen(
                         settings = settings,
                         hasUsageAccess = hasUsageAccess,
+                        canDrawOverlays = canDrawOverlays,
                         onUpdate = repository::update,
                         onPickFolder = { folderLauncher.launch(null) },
                         onPickApp = { showAppPicker = true },
@@ -239,6 +272,7 @@ fun RecorderApp() {
                                     .show()
                             }
                         },
+                        onRequestOverlayPermission = requestOverlayPermission,
                         modifier = Modifier.weight(1f),
                     )
                 }

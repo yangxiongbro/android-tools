@@ -48,10 +48,12 @@ private enum class SettingsDialog {
 fun SettingsScreen(
     settings: RecorderSettings,
     hasUsageAccess: Boolean,
+    canDrawOverlays: Boolean,
     onUpdate: ((RecorderSettings) -> RecorderSettings) -> Unit,
     onPickFolder: () -> Unit,
     onPickApp: () -> Unit,
     onOpenUsageAccess: () -> Unit,
+    onRequestOverlayPermission: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var openDialog by remember { mutableStateOf<SettingsDialog?>(null) }
@@ -208,6 +210,23 @@ fun SettingsScreen(
                 subtitle = "长时间录制时避免系统休眠导致丢帧",
                 checked = settings.keepCpuAwake,
                 onCheckedChange = { checked -> onUpdate { it.copy(keepCpuAwake = checked) } },
+            )
+            RowDivider()
+            SettingsSwitchRow(
+                title = "悬浮控制按钮",
+                subtitle = if (canDrawOverlays) {
+                    "录制时悬浮显示：点击暂停/继续，长按停止，可拖动"
+                } else {
+                    "需要「显示在其他应用上层」权限，点击前往授权"
+                },
+                checked = settings.floatingControl,
+                onCheckedChange = { checked ->
+                    if (checked && !canDrawOverlays) {
+                        onRequestOverlayPermission()
+                    } else {
+                        onUpdate { it.copy(floatingControl = checked) }
+                    }
+                },
             )
         }
 

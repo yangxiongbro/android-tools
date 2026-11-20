@@ -34,10 +34,12 @@ class ScreenRecorderService : Service() {
     private var engine: RecordingEngine? = null
     private var projection: MediaProjection? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var floatingControl: FloatingControl? = null
 
     private var paused = false
     private var startedAtMillis = 0L
     private var resolution = ""
+    private var floatingControlEnabled = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -59,6 +61,7 @@ class ScreenRecorderService : Service() {
 
     override fun onDestroy() {
         runCatching { engine?.stop() }
+        hideFloatingControl()
         releaseWakeLock()
         super.onDestroy()
     }
@@ -101,6 +104,7 @@ class ScreenRecorderService : Service() {
         val displaySize = DisplayUtils.currentDisplaySize(this)
 
         projection = mediaProjection
+        floatingControlEnabled = settings.floatingControl
         acquireWakeLock(settings.keepCpuAwake)
         RecorderController.publish(RecorderState.Preparing)
 
@@ -117,23 +121,27 @@ class ScreenRecorderService : Service() {
             paused = false
             publishRecording(fileName)
             updateNotification()
+            showFloatingControl(FloatingControl.State.RECORDING)
         }
 
         override fun onPaused() {
             paused = true
             publishRecording(null)
             updateNotification()
+            floatingControl?.update(FloatingControl.State.PAUSED)
         }
 
         override fun onResumed() {
             paused = false
             publishRecording(null)
             updateNotification()
+            floatingControl?.update(FloatingControl.State.RECORDING)
         }
 
         override fun onStopped(fileName: String, durationMillis: Long, errorMessage: String?) {
             engine = null
             projection = null
+            hideFloatingControl()
             releaseWakeLock()
             RecorderController.publish(
                 if (errorMessage != null) {
@@ -167,6 +175,33 @@ class ScreenRecorderService : Service() {
         RecorderController.publish(RecorderState.Failed(message))
         stopSelfSafely()
     }
+
+    // region floating control
+
+    private fun showFloatingControl(state: FloatingControl.State) {
+        if (!floatingControlEnabled || !FloatingControl.canDrawOverlays(this)) return
+        val control = floatingControl ?: FloatingControl(
+            this,
+            object : FloatingControl.Callbacks {
+                override fun onTogglePause() {
+                    val current = engine ?: return
+                    if (paused) current.resume() else current.pause()
+                }
+
+                override fun onStop() {
+                    engine?.stop() ?: stopSelfSafely()
+                }
+            },
+        ).also { floatingControl = it }
+        control.show(state)
+    }
+
+    private fun hideFloatingControl() {
+        floatingControl?.hide()
+        floatingControl = null
+    }
+
+    // endregion
 
     private fun stopSelfSafely() {
         runCatching { stopForeground(STOP_FOREGROUND_REMOVE) }

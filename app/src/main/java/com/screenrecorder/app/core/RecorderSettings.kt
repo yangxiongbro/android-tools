@@ -70,6 +70,8 @@ data class RecorderSettings(
     val targetLabel: String? = null,
     val autoStopWhenTargetLeaves: Boolean = false,
     val keepCpuAwake: Boolean = true,
+    /** Show the floating pause/stop button on top of other apps while recording. */
+    val floatingControl: Boolean = true,
 ) {
 
     val hasAudio: Boolean get() = audioSource != AudioSourcePreset.NONE

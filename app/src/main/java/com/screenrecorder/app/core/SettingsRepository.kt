@@ -48,6 +48,7 @@ class SettingsRepository private constructor(context: Context) {
                 defaults.autoStopWhenTargetLeaves,
             ),
             keepCpuAwake = prefs.getBoolean(KEY_KEEP_AWAKE, defaults.keepCpuAwake),
+            floatingControl = prefs.getBoolean(KEY_FLOATING_CONTROL, defaults.floatingControl),
         )
     }
 
@@ -70,6 +71,7 @@ class SettingsRepository private constructor(context: Context) {
             .putString(KEY_TARGET_LABEL, settings.targetLabel)
             .putBoolean(KEY_AUTO_STOP, settings.autoStopWhenTargetLeaves)
             .putBoolean(KEY_KEEP_AWAKE, settings.keepCpuAwake)
+            .putBoolean(KEY_FLOATING_CONTROL, settings.floatingControl)
             .apply()
     }
 
@@ -98,6 +100,7 @@ class SettingsRepository private constructor(context: Context) {
         private const val KEY_TARGET_LABEL = "target_label"
         private const val KEY_AUTO_STOP = "auto_stop"
         private const val KEY_KEEP_AWAKE = "keep_awake"
+        private const val KEY_FLOATING_CONTROL = "floating_control"
 
         @Volatile
         private var instance: SettingsRepository? = null
