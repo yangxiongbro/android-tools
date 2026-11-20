@@ -4,26 +4,16 @@ import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -37,7 +27,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -68,39 +57,51 @@ fun RecordingsScreen(settings: RecorderSettings, modifier: Modifier = Modifier) 
         reloadKey++
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        when {
-            loading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+    Column(modifier = modifier.fillMaxSize().padding(horizontal = 18.dp)) {
+        AppHeader(
+            title = "录制文件",
+            subtitle = when {
+                loading -> "正在读取…"
+                items.isEmpty() -> "这里会出现在本机保存的录制视频"
+                else -> "${items.size} 个文件 · 共 ${Formatters.fileSize(items.sumOf { it.sizeBytes })}"
+            },
+        )
 
-            items.isEmpty() -> EmptyState(
-                title = "还没有录制文件",
-                description = "回到首页点击录制按钮即可开始第一次录制",
-                modifier = Modifier.align(Alignment.Center),
-            )
+        Box(modifier = Modifier.weight(1f).fillMaxSize()) {
+            when {
+                loading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
 
-            else -> LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                items(items, key = { it.uri.toString() }) { item ->
-                    RecordingRow(
-                        item = item,
-                        onPlay = {
-                            runCatching { context.startActivity(repository.playIntent(item)) }
-                                .onFailure {
-                                    Toast.makeText(context, "没有可用的播放器", Toast.LENGTH_SHORT)
-                                        .show()
-                                }
-                        },
-                        onShare = {
-                            runCatching { context.startActivity(repository.shareIntent(item)) }
-                                .onFailure {
-                                    Toast.makeText(context, "分享失败", Toast.LENGTH_SHORT).show()
-                                }
-                        },
-                        onDelete = { deleteTarget = item },
-                    )
+                items.isEmpty() -> EmptyState(
+                    icon = Icons.Outlined.VideoLibrary,
+                    title = "还没有录制文件",
+                    description = "回到「工具」页点击录制按钮，即可开始第一次录制",
+                    modifier = Modifier.align(Alignment.Center),
+                )
+
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(items, key = { it.uri.toString() }) { item ->
+                        RecordingCard(
+                            item = item,
+                            onPlay = {
+                                runCatching { context.startActivity(repository.playIntent(item)) }
+                                    .onFailure {
+                                        Toast.makeText(context, "没有可用的播放器", Toast.LENGTH_SHORT)
+                                            .show()
+                                    }
+                            },
+                            onShare = {
+                                runCatching { context.startActivity(repository.shareIntent(item)) }
+                                    .onFailure {
+                                        Toast.makeText(context, "分享失败", Toast.LENGTH_SHORT).show()
+                                    }
+                            },
+                            onDelete = { deleteTarget = item },
+                        )
+                    }
                 }
             }
         }
@@ -124,81 +125,12 @@ fun RecordingsScreen(settings: RecorderSettings, modifier: Modifier = Modifier) 
                         }
                     },
                 ) {
-                    Text("删除")
+                    Text("删除", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deleteTarget = null }) { Text("取消") }
             },
         )
-    }
-}
-
-@Composable
-private fun RecordingRow(
-    item: RecordingItem,
-    onPlay: () -> Unit,
-    onShare: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    text = buildString {
-                        append(Formatters.fileSize(item.sizeBytes))
-                        if (item.durationMillis > 0) {
-                            append(" · ")
-                            append(Formatters.duration(item.durationMillis))
-                        }
-                        if (item.dateMillis > 0) {
-                            append(" · ")
-                            append(Formatters.date(item.dateMillis))
-                        }
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            IconButton(onClick = onPlay) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "播放",
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-            IconButton(onClick = onShare) {
-                Icon(
-                    imageVector = Icons.Default.Share,
-                    contentDescription = "分享",
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            IconButton(onClick = onDelete) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "删除",
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.error,
-                )
-            }
-        }
     }
 }

@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -13,8 +13,8 @@ android {
         applicationId = "com.screenrecorder.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.1.0"
+        versionCode = 5
+        versionName = "1.1.1"
 
         vectorDrawables { useSupportLibrary = true }
     }
@@ -51,6 +51,22 @@ android {
     packaging {
         resources {
             excludes += setOf("/META-INF/{AL2.0,LGPL2.1}")
+        }
+    }
+
+    // 产物文件名带版本号：app-debug.apk → android-tools-1.1.1-debug.apk
+    // 版本号取自 defaultConfig.versionName，改版本号后文件名自动跟随，无需再改这里。
+    applicationVariants.all {
+        val variant = this
+        val appVersion = defaultConfig.versionName ?: "unspecified"
+        val unsigned = variant.buildType.name == "release" && variant.signingConfig == null
+        val fileName = buildString {
+            append("android-tools-$appVersion-${variant.buildType.name}")
+            if (unsigned) append("-unsigned")
+            append(".apk")
+        }
+        outputs.all {
+            (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName = fileName
         }
     }
 }

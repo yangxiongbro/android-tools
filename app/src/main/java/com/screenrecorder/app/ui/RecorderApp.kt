@@ -14,19 +14,40 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.outlined.Dashboard
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -44,6 +65,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -68,15 +92,16 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private enum class AppTab(val label: String) {
-    HOME("首页"),
-    FILES("录制文件"),
+    TOOLS("工具"),
+    FILES("文件"),
     SETTINGS("设置"),
-}
+    ;
 
-private fun AppTab.icon(): ImageVector = when (this) {
-    AppTab.HOME -> Icons.Default.Home
-    AppTab.FILES -> Icons.Default.VideoLibrary
-    AppTab.SETTINGS -> Icons.Default.Settings
+    fun icon(selected: Boolean): ImageVector = when (this) {
+        TOOLS -> if (selected) Icons.Filled.Dashboard else Icons.Outlined.Dashboard
+        FILES -> if (selected) Icons.Filled.VideoLibrary else Icons.Outlined.VideoLibrary
+        SETTINGS -> if (selected) Icons.Filled.Settings else Icons.Outlined.Settings
+    }
 }
 
 @Composable
@@ -89,7 +114,7 @@ fun RecorderApp() {
     val scope = rememberCoroutineScope()
     val foregroundMonitor = remember(context) { ForegroundAppMonitor(context) }
 
-    var tab by rememberSaveable { mutableStateOf(AppTab.HOME) }
+    var tab by rememberSaveable { mutableStateOf(AppTab.TOOLS) }
     var showAppPicker by remember { mutableStateOf(false) }
     var countdown by remember { mutableIntStateOf(0) }
     var startSignal by remember { mutableIntStateOf(0) }
@@ -223,22 +248,18 @@ fun RecorderApp() {
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavigationBar {
-                AppTab.entries.forEach { item ->
-                    NavigationBarItem(
-                        selected = tab == item,
-                        onClick = { tab = item },
-                        icon = { Icon(item.icon(), contentDescription = item.label) },
-                        label = { Text(item.label) },
-                    )
-                }
-            }
+            BottomNav(
+                selected = tab,
+                recording = recorderState is RecorderState.Recording,
+                onSelect = { tab = it },
+            )
         },
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             when (tab) {
-                AppTab.HOME -> HomeScreen(
+                AppTab.TOOLS -> ToolHubScreen(
                     settings = settings,
                     state = recorderState,
                     onStart = {
@@ -248,40 +269,46 @@ fun RecorderApp() {
                     onPause = { RecordingCommands.pause(context) },
                     onResume = { RecordingCommands.resume(context) },
                     onOpenSettings = { tab = AppTab.SETTINGS },
+                    onOpenFiles = { tab = AppTab.FILES },
+                    onToolClick = { tool ->
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                if (tool.status == ToolStatus.PLANNED) {
+                                    "「${tool.title}」正在开发中，敬请期待"
+                                } else {
+                                    "「${tool.title}」暂未开放"
+                                },
+                            )
+                        }
+                    },
                 )
 
-                AppTab.FILES -> Column(modifier = Modifier.fillMaxSize()) {
-                    ScreenTitle("录制文件")
-                    RecordingsScreen(settings = settings, modifier = Modifier.weight(1f))
-                }
+                AppTab.FILES -> RecordingsScreen(settings = settings)
 
-                AppTab.SETTINGS -> Column(modifier = Modifier.fillMaxSize()) {
-                    ScreenTitle("设置")
-                    SettingsScreen(
-                        settings = settings,
-                        hasUsageAccess = hasUsageAccess,
-                        canDrawOverlays = canDrawOverlays,
-                        onUpdate = repository::update,
-                        onPickFolder = { folderLauncher.launch(null) },
-                        onPickApp = { showAppPicker = true },
-                        onOpenUsageAccess = {
-                            runCatching {
-                                context.startActivity(ForegroundAppMonitor.usageAccessSettingsIntent())
-                            }.onFailure {
-                                Toast.makeText(context, "无法打开使用情况访问设置", Toast.LENGTH_SHORT)
-                                    .show()
-                            }
-                        },
-                        onRequestOverlayPermission = requestOverlayPermission,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
+                AppTab.SETTINGS -> SettingsScreen(
+                    settings = settings,
+                    hasUsageAccess = hasUsageAccess,
+                    canDrawOverlays = canDrawOverlays,
+                    onUpdate = repository::update,
+                    onPickFolder = { folderLauncher.launch(null) },
+                    onPickApp = { showAppPicker = true },
+                    onOpenUsageAccess = {
+                        runCatching {
+                            context.startActivity(ForegroundAppMonitor.usageAccessSettingsIntent())
+                        }.onFailure {
+                            Toast.makeText(context, "无法打开使用情况访问设置", Toast.LENGTH_SHORT)
+                                .show()
+                        }
+                    },
+                    onRequestOverlayPermission = requestOverlayPermission,
+                )
             }
         }
     }
 
     if (showAppPicker) {
         AppPickerDialog(
+            currentPackage = settings.targetPackage,
             onDismiss = { showAppPicker = false },
             onSelect = { app ->
                 repository.update { it.copy(targetPackage = app.packageName, targetLabel = app.label) }
@@ -297,20 +324,62 @@ fun RecorderApp() {
                 dismissOnClickOutside = false,
             ),
         ) {
-            Surface(
-                shape = MaterialTheme.shapes.extraLarge,
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 4.dp,
+            Box(
+                modifier = Modifier
+                    .size(190.dp)
+                    .clip(CircleShape)
+                    .background(Brush.linearGradient(AppAccents.Record)),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(
-                    modifier = Modifier.width(160.dp).padding(vertical = 28.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = "$countdown",
-                        fontSize = 64.sp,
+                        fontSize = 68.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = Color.White,
+                    )
+                    Text(
+                        text = "即将开始录制",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.85f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 底部浮动导航栏：选中项展开为「图标 + 文字」的胶囊。 */
+@Composable
+private fun BottomNav(
+    selected: AppTab,
+    recording: Boolean,
+    onSelect: (AppTab) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shadowElevation = 12.dp,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier = Modifier.padding(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                AppTab.entries.forEach { item ->
+                    NavItem(
+                        item = item,
+                        selected = selected == item,
+                        showRecordingDot = recording && item == AppTab.TOOLS,
+                        onClick = { onSelect(item) },
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -319,13 +388,71 @@ fun RecorderApp() {
 }
 
 @Composable
-private fun ScreenTitle(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.headlineSmall,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp),
+private fun NavItem(
+    item: AppTab,
+    selected: Boolean,
+    showRecordingDot: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tint by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        label = "navTint",
     )
+    val indicator by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+        } else {
+            Color.Transparent
+        },
+        label = "navIndicator",
+    )
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(indicator)
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box {
+            Icon(
+                imageVector = item.icon(selected),
+                contentDescription = item.label,
+                tint = tint,
+                modifier = Modifier.size(21.dp),
+            )
+            if (showRecordingDot) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 4.dp, y = (-4).dp)
+                        .size(7.dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape),
+                )
+            }
+        }
+        AnimatedVisibility(
+            visible = selected,
+            enter = fadeIn() + expandHorizontally(),
+            exit = fadeOut() + shrinkHorizontally(),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    text = item.label,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = tint,
+                )
+            }
+        }
+    }
 }
 
 private fun launchProjection(

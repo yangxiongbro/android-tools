@@ -1,6 +1,6 @@
 # android-tools · 录屏助手
 
-> 工程名 `android-tools`，应用名「录屏助手」。
+> 工程名 `android-tools`，应用名「录屏助手」——界面是一个可扩展的「工具箱」，屏幕录制是其中的第一个工具。
 
 Android 屏幕录制应用：可以录制**整个屏幕**，也可以在 Android 14+ 上录制**单个应用**；录制参数（帧率、分辨率、码率、编码格式、声音、保存位置等）全部可配置。
 
@@ -9,6 +9,14 @@ Android 屏幕录制应用：可以录制**整个屏幕**，也可以在 Android
 ---
 
 ## 功能
+
+**界面**
+- 首页是「工具箱」：屏幕录制作为主卡片，录制中直接显示计时 / 暂停 / 停止；下方「更多工具」网格由
+  `ui/ToolRegistry.kt` 驱动，后续新增工具只需注册一条 `ToolSpec`，首页布局不用改
+- 底部浮动胶囊导航（工具 / 文件 / 设置），选中项展开为「图标 + 文字」，录制中在「工具」上显示红点
+- 深 / 浅色主题跟随系统，状态栏、导航栏图标自动适配
+- 录制文件列表带**首帧缩略图**、时长角标，播放 / 分享 / 删除收进「更多」菜单
+- 设置页按功能分组、每项带图标，顶部应用信息卡显示当前版本
 
 **录制**
 - 整屏录制 / 单个应用录制（Android 14+ 系统级单应用捕获）
@@ -30,7 +38,7 @@ Android 屏幕录制应用：可以录制**整个屏幕**，也可以在 Android
 **文件管理**
 - 保存位置：相册 `Movies/ScreenRecorder`、SAF 自定义文件夹、应用专属目录
 - 文件名前缀可配置，默认 `ScreenRecorder_20260101_120000.mp4`
-- 应用内列表：播放 / 分享 / 删除
+- 应用内列表：缩略图 / 播放 / 分享 / 删除
 
 ---
 
@@ -57,12 +65,20 @@ gradlew.bat :app:assembleDebug
 ./gradlew :app:assembleDebug
 ```
 
-产物：`app/build/outputs/apk/debug/app-debug.apk`
+产物：`app/build/outputs/apk/debug/android-tools-1.1.1-debug.apk`
+
+产物文件名统一带版本号（`android-tools-<versionName>-<buildType>.apk`，未签名的 release 追加
+`-unsigned`），版本号取自 `defaultConfig.versionName`，改版本号后文件名自动跟随：
+
+| 命令 | 产物 |
+| --- | --- |
+| `:app:assembleDebug` | `app/build/outputs/apk/debug/android-tools-1.1.1-debug.apk` |
+| `:app:assembleRelease` | `app/build/outputs/apk/release/android-tools-1.1.1-release-unsigned.apk` |
 
 安装：
 
 ```bash
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/debug/android-tools-1.1.1-debug.apk
 ```
 
 > **网络提示**：`gradle/wrapper/gradle-wrapper.properties` 中的 `distributionUrl` 当前指向腾讯云镜像
@@ -78,8 +94,18 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 1. 打开应用，首次录制时按提示授予「通知」「麦克风」权限。
 2. 在「设置」中选择录制范围、分辨率、帧率、码率、声音来源与保存位置。
-3. 回到首页点击中间的录制按钮；系统会弹出屏幕捕获授权（Android 14+ 可在弹窗中选择「单个应用」）。
-4. 录制过程中可以在应用内或通知栏暂停 / 继续 / 停止；停止后文件会出现在「录制文件」页。
+3. 回到「工具」页，点击「屏幕录制」卡片里的录制按钮；系统会弹出屏幕捕获授权（Android 14+ 可在弹窗中选择「单个应用」）。
+4. 录制过程中可以在卡片内、悬浮按钮或通知栏暂停 / 继续 / 停止；停止后会自动跳到「文件」页。
+
+### 新增工具（扩展点）
+
+界面从一开始就按「多个工具」设计，新增工具不需要动首页布局：
+
+1. 在 `ui/ToolRegistry.kt` 的 `ToolId` 里加一项；
+2. 在 `ToolRegistry.tools` 里加一条 `ToolSpec`（标题、说明、图标、强调色；占位用 `ToolStatus.PLANNED`）；
+3. 可用的工具，在 `ui/RecorderApp.kt` 的 `AppTab.TOOLS` 分支里挂上它自己的界面（或按 `tool.id` 分发）。
+
+首页的「更多工具」网格、工具卡片配色、以及「即将推出」提示都会自动生效。
 
 ### 单应用录制说明
 
@@ -132,7 +158,18 @@ app/src/main/java/com/screenrecorder/app/
 ├── apps/
 │   ├── InstalledApps.kt            已安装应用列表
 │   └── ForegroundAppMonitor.kt     前台应用检测（UsageStats）
-├── ui/                             Compose 界面（首页/设置/录制文件/应用选择）
+├── ui/
+│   ├── RecorderApp.kt              应用外壳：底部导航、权限/授权流程、倒计时
+│   ├── Theme.kt                    配色（深/浅色）、字体、形状、工具强调色
+│   ├── ToolRegistry.kt             工具箱注册表（新增工具在此登记）
+│   ├── ToolHubScreen.kt            首页：录制主卡片 + 更多工具 + 最近录制
+│   ├── RecordingsScreen.kt         录制文件列表
+│   ├── RecordingCard.kt            录制文件卡片（缩略图 + 更多菜单）
+│   ├── VideoThumbnail.kt           视频首帧缩略图
+│   ├── SettingsScreen.kt           设置页
+│   ├── AppPickerDialog.kt          目标应用选择
+│   ├── AppIcon.kt                  应用图标（带缓存）
+│   └── Components.kt               通用组件：卡片、分组、选择/滑块对话框、空状态
 └── util/                           格式化、显示尺寸
 ```
 
@@ -162,6 +199,22 @@ app/src/main/java/com/screenrecorder/app/
 
 ---
 
+## 已验证（1.1.1 界面）
+
+在 Android 15（API 35，x86_64）模拟器上逐屏检查了重构后的界面（深色 + 浅色）：
+
+| 场景 | 结果 |
+| --- | --- |
+| 首页工具箱 | 录制主卡片、配置摘要（分辨率/帧率/码率/声音/保存位置）、更多工具网格、最近录制均正常 |
+| 录制中 / 已暂停 | 卡片切换为计时 + 文件名 + 暂停/继续/停止；状态徽章、计时与红点同步；底部「工具」出现录制红点 |
+| 倒计时 | 3 秒倒计时圆形弹窗正常，随后弹出系统捕获授权 |
+| 停止录制 | 自动跳到「文件」页并提示「已保存：xxx.mp4」，列表即时刷新 |
+| 文件页 | 首帧缩略图、时长角标、大小/时间、更多菜单（播放/分享/删除）与删除确认均正常 |
+| 空状态 | 文件页与首页「最近录制」的空状态布局正常 |
+| 设置页 | 6 个分组、图标、版本徽章（v1.1.1）与各类选择/滑块/输入对话框均正常 |
+| 目标应用 | 应用列表带真实图标、搜索、已选标记；选中后设置页回显应用名 |
+| 深色模式 | 配色、卡片层次、状态栏/导航栏图标跟随主题；运行中切换深色模式图标即时刷新 |
+
 ## 已验证（1.0.1）
 
 在 Android 15（API 35，x86_64）模拟器上做过端到端验证：
@@ -190,6 +243,22 @@ app/src/main/java/com/screenrecorder/app/
 - 尚未实现：触摸轨迹、摄像头画面合成、剪辑、录制后合并/裁剪。
 
 ## 版本
+
+`1.1.1` — 界面重构，对应需求 `需求/version-1.1.1.MD`：
+
+- 首页改为**工具箱**结构：屏幕录制是渐变主卡片（录制中直接显示计时与暂停/停止），
+  下方「更多工具」网格由 `ui/ToolRegistry.kt` 驱动 —— 后续新增工具只需在注册表里加一条，
+  不用改首页布局
+- 底部导航改为浮动胶囊样式（工具 / 文件 / 设置），选中项展开为「图标 + 文字」，录制中显示红点
+- 录制文件列表新增**首帧缩略图**与时长角标，播放/分享/删除收进「更多」菜单，顶部显示文件数与总大小
+- 设置页重排：按功能分组并加图标，顶部应用信息卡显示当前版本（v1.1.1）
+- 目标应用选择改为带应用图标的列表（图标内存缓存）+ 已选标记 + 圆角搜索框
+- 建立统一设计体系：`Theme.kt` 里集中定义 Typography / Shapes / 工具强调色渐变；深色配色重新调校，
+  状态栏与导航栏图标跟随主题（运行中切换深色模式也即时刷新）
+- 空状态、倒计时弹窗、删除确认等细节重新设计
+- 构建产物文件名带版本号：`android-tools-1.1.1-debug.apk` / `android-tools-1.1.1-release-unsigned.apk`
+  （版本号取自 `defaultConfig.versionName`，自动跟随）
+- versionName `1.1.1` / versionCode 5
 
 `1.1.0` — 对应需求 `需求/version-1.1.0.MD`：
 

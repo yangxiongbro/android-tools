@@ -3,22 +3,49 @@ package com.screenrecorder.app.ui
 import android.net.Uri
 import android.os.Build
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ExitToApp
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.BatteryChargingFull
+import androidx.compose.material.icons.outlined.CropFree
+import androidx.compose.material.icons.outlined.DataUsage
+import androidx.compose.material.icons.outlined.DriveFileRenameOutline
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.HighQuality
+import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.PictureInPictureAlt
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Speed
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.screenrecorder.app.BuildConfig
 import com.screenrecorder.app.core.AudioSourcePreset
 import com.screenrecorder.app.core.CaptureMode
 import com.screenrecorder.app.core.FrameRatePreset
@@ -64,9 +91,19 @@ fun SettingsScreen(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(vertical = 8.dp),
+            .padding(vertical = 4.dp),
     ) {
-        SettingsGroup(title = "录制范围") {
+        AppHeader(
+            title = "设置",
+            subtitle = "按需调整录制参数，修改后立即生效",
+            modifier = Modifier.padding(horizontal = 18.dp),
+        )
+
+        Spacer(Modifier.padding(top = 8.dp))
+
+        AppBanner()
+
+        SettingsGroup(title = "录制范围", icon = Icons.Outlined.CropFree) {
             SettingsRow(
                 title = "录制范围",
                 subtitle = if (singleAppSupported) {
@@ -75,14 +112,16 @@ fun SettingsScreen(
                     "当前系统仅支持录制整个屏幕"
                 },
                 value = settings.captureMode.label,
+                leading = Icons.Outlined.CropFree,
                 onClick = { openDialog = SettingsDialog.CAPTURE_MODE },
             )
             if (settings.captureMode == CaptureMode.SINGLE_APP) {
                 RowDivider()
                 SettingsRow(
                     title = "目标应用",
-                    subtitle = "用于提示与自动停止，实际录制应用由系统弹窗选择",
+                    subtitle = "仅用于提示与自动停止",
                     value = settings.targetLabel ?: "未选择",
+                    leading = Icons.Outlined.Apps,
                     onClick = onPickApp,
                 )
                 RowDivider()
@@ -95,6 +134,7 @@ fun SettingsScreen(
                     },
                     checked = settings.autoStopWhenTargetLeaves && hasUsageAccess,
                     enabled = settings.targetPackage != null,
+                    leading = Icons.AutoMirrored.Outlined.ExitToApp,
                     onCheckedChange = { checked ->
                         if (hasUsageAccess) {
                             onUpdate { it.copy(autoStopWhenTargetLeaves = checked) }
@@ -106,10 +146,11 @@ fun SettingsScreen(
             }
         }
 
-        SettingsGroup(title = "画质与性能") {
+        SettingsGroup(title = "画质与性能", icon = Icons.Outlined.Tune) {
             SettingsRow(
                 title = "分辨率",
                 value = settings.resolution.label,
+                leading = Icons.Outlined.HighQuality,
                 onClick = { openDialog = SettingsDialog.RESOLUTION },
             )
             RowDivider()
@@ -117,12 +158,14 @@ fun SettingsScreen(
                 title = "帧率",
                 subtitle = "固定帧率；画面静止时会重复上一帧",
                 value = settings.frameRate.label,
+                leading = Icons.Outlined.Speed,
                 onClick = { openDialog = SettingsDialog.FRAME_RATE },
             )
             RowDivider()
             SettingsRow(
                 title = "画质预设",
                 value = settings.quality.label,
+                leading = Icons.Outlined.Tune,
                 onClick = { openDialog = SettingsDialog.QUALITY },
             )
             RowDivider()
@@ -133,17 +176,19 @@ fun SettingsScreen(
                 } else {
                     "自动"
                 },
+                leading = Icons.Outlined.DataUsage,
                 onClick = { openDialog = SettingsDialog.BITRATE },
             )
             RowDivider()
             SettingsRow(
                 title = "编码格式",
                 value = settings.codec.label,
+                leading = Icons.Outlined.Memory,
                 onClick = { openDialog = SettingsDialog.CODEC },
             )
         }
 
-        SettingsGroup(title = "声音") {
+        SettingsGroup(title = "声音", icon = Icons.AutoMirrored.Outlined.VolumeUp) {
             SettingsRow(
                 title = "声音来源",
                 subtitle = if (settings.audioSource == AudioSourcePreset.INTERNAL) {
@@ -152,6 +197,7 @@ fun SettingsScreen(
                     null
                 },
                 value = settings.audioSource.label,
+                leading = Icons.AutoMirrored.Outlined.VolumeUp,
                 onClick = { openDialog = SettingsDialog.AUDIO_SOURCE },
             )
             if (settings.hasAudio) {
@@ -159,15 +205,17 @@ fun SettingsScreen(
                 SettingsRow(
                     title = "音频码率",
                     value = "${settings.audioBitrateKbps} Kbps",
+                    leading = Icons.Outlined.GraphicEq,
                     onClick = { openDialog = SettingsDialog.AUDIO_BITRATE },
                 )
             }
         }
 
-        SettingsGroup(title = "保存") {
+        SettingsGroup(title = "保存", icon = Icons.Outlined.Folder) {
             SettingsRow(
                 title = "保存位置",
                 value = settings.saveLocation.label,
+                leading = Icons.Outlined.Folder,
                 onClick = { openDialog = SettingsDialog.SAVE_LOCATION },
             )
             if (settings.saveLocation == SaveLocation.CUSTOM_FOLDER) {
@@ -176,6 +224,7 @@ fun SettingsScreen(
                     title = "自定义文件夹",
                     subtitle = "通过系统文件选择器授权，重启后仍然有效",
                     value = settings.customFolderUri?.let(::prettyFolderName) ?: "未选择",
+                    leading = Icons.Outlined.Folder,
                     onClick = onPickFolder,
                 )
             }
@@ -184,14 +233,16 @@ fun SettingsScreen(
                 title = "文件名前缀",
                 subtitle = "最终命名为 前缀_日期_时间.mp4",
                 value = settings.fileNamePrefix,
+                leading = Icons.Outlined.DriveFileRenameOutline,
                 onClick = { openDialog = SettingsDialog.PREFIX },
             )
         }
 
-        SettingsGroup(title = "录制行为") {
+        SettingsGroup(title = "录制行为", icon = Icons.Outlined.Timer) {
             SettingsRow(
                 title = "开始倒计时",
                 value = if (settings.countdownSeconds == 0) "关闭" else "${settings.countdownSeconds} 秒",
+                leading = Icons.Outlined.Timer,
                 onClick = { openDialog = SettingsDialog.COUNTDOWN },
             )
             RowDivider()
@@ -202,6 +253,7 @@ fun SettingsScreen(
                 } else {
                     "${settings.maxDurationMinutes} 分钟"
                 },
+                leading = Icons.Outlined.Schedule,
                 onClick = { openDialog = SettingsDialog.MAX_DURATION },
             )
             RowDivider()
@@ -209,6 +261,7 @@ fun SettingsScreen(
                 title = "保持 CPU 唤醒",
                 subtitle = "长时间录制时避免系统休眠导致丢帧",
                 checked = settings.keepCpuAwake,
+                leading = Icons.Outlined.BatteryChargingFull,
                 onCheckedChange = { checked -> onUpdate { it.copy(keepCpuAwake = checked) } },
             )
             RowDivider()
@@ -220,6 +273,7 @@ fun SettingsScreen(
                     "需要「显示在其他应用上层」权限，点击前往授权"
                 },
                 checked = settings.floatingControl,
+                leading = Icons.Outlined.PictureInPictureAlt,
                 onCheckedChange = { checked ->
                     if (checked && !canDrawOverlays) {
                         onRequestOverlayPermission()
@@ -231,8 +285,8 @@ fun SettingsScreen(
         }
 
         Column(
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
                 text = "提示：录制中旋转屏幕时画面会等比缩放（出现黑边），视频分辨率在整个录制过程中保持不变。",
@@ -243,6 +297,12 @@ fun SettingsScreen(
                 text = "录制文件仅保存在本机，不会上传。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.padding(top = 2.dp))
+            Text(
+                text = "录屏助手 · ${BuildConfig.VERSION_NAME.substringBefore("-")}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
             )
         }
     }
@@ -382,6 +442,41 @@ fun SettingsScreen(
         )
 
         null -> Unit
+    }
+}
+
+/** 顶部应用信息卡：名称、本地录制说明与当前版本号。 */
+@Composable
+private fun AppBanner() {
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        tonalElevation = 1.dp,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+    ) {
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconBadge(
+                icon = Icons.Filled.Videocam,
+                accent = AppAccents.Record,
+                size = 46.dp,
+                iconSize = 24.dp,
+            )
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = "录屏助手", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = "本地录制，文件不会上传",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            PillBadge(
+                text = "v${BuildConfig.VERSION_NAME.substringBefore("-")}",
+                container = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                content = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }
 
