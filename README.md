@@ -1,8 +1,9 @@
-# android-tools · 录屏助手
+# android-tools · 工具库
 
-> 工程名 `android-tools`，应用名「录屏助手」——界面是一个可扩展的「工具箱」，屏幕录制是其中的第一个工具。
+> 工程名 `android-tools`，应用名「工具库」，包名 `com.android_tools.app`。
+> 界面是一个可扩展的工具箱：当前有「录屏工具」与「文件同步」两个工具，后续工具按同一套卡片结构继续加。
 
-Android 屏幕录制应用：可以录制**整个屏幕**，也可以在 Android 14+ 上录制**单个应用**；录制参数（帧率、分辨率、码率、编码格式、声音、保存位置等）全部可配置。
+Android 本地工具集。**录屏工具**可以录制整个屏幕，也可以在 Android 14+ 上录制单个应用，录制参数（帧率、分辨率、码率、编码格式、声音、保存位置等）全部可配置；**文件同步**通过 WiFi / 局域网与电脑上的 DevToolbox 双向同步文件，也可以通过蓝牙在手机之间互传。
 
 技术栈：Kotlin · Jetpack Compose (Material 3) · MediaProjection · MediaCodec · MediaMuxer · Gradle（Kotlin DSL）。
 
@@ -11,12 +12,12 @@ Android 屏幕录制应用：可以录制**整个屏幕**，也可以在 Android
 ## 功能
 
 **界面**
-- 首页是「工具箱」：屏幕录制作为主卡片，录制中直接显示计时 / 暂停 / 停止；下方「更多工具」网格由
-  `ui/ToolRegistry.kt` 驱动，后续新增工具只需注册一条 `ToolSpec`，首页布局不用改
-- 底部浮动胶囊导航（工具 / 文件 / 设置），选中项展开为「图标 + 文字」，录制中在「工具」上显示红点
+- 工具页：所有工具按双列卡片网格排布，卡片内容由 `ui/ToolRegistry.kt` 驱动，新增工具只需注册一条
+  `ToolSpec` 并在 `ui/RecorderApp.kt` 的 `Route` 分发里挂上页面，工具页布局不用改
+- 每个工具都有自己的整屏工具页：录屏工具页 = 录制控制 + 「录制文件」入口；文件同步页 = 连接方式 + 同步目录
+- 底部浮动胶囊导航只有「工具 / 设置」，选中项展开为「图标 + 文字」，录制中在「工具」上显示红点
+- 设置页只保留应用信息与「工具设置」目录，录屏工具的设置收在二级页里（设置 → 工具设置 → 录屏工具）
 - 深 / 浅色主题跟随系统，状态栏、导航栏图标自动适配
-- 录制文件列表带**首帧缩略图**、时长角标，播放 / 分享 / 删除收进「更多」菜单
-- 设置页按功能分组、每项带图标，顶部应用信息卡显示当前版本
 
 **录制**
 - 整屏录制 / 单个应用录制（Android 14+ 系统级单应用捕获）
@@ -36,12 +37,13 @@ Android 屏幕录制应用：可以录制**整个屏幕**，也可以在 Android
 - 录制中旋转屏幕时，画面按原始方向等比缩放并保留黑边，视频分辨率保持不变
 
 **文件管理**
+- 入口在录屏工具页的「录制文件」区域：默认显示最近 3 个，「全部」进入完整列表
 - 保存位置：相册 `Movies/ScreenRecorder`、SAF 自定义文件夹、应用专属目录
 - 文件名前缀可配置，默认 `ScreenRecorder_20260101_120000.mp4`
-- 应用内列表：缩略图 / 播放 / 分享 / 删除
+- 列表带**首帧缩略图**与时长角标：播放 / 分享 / 删除收进「更多」菜单
 
 **文件同步（1.2.0 新增）**
-- 首页「更多工具 → 文件同步」进入，顶部用「连接方式」在「WiFi / 局域网」与「蓝牙」之间切换
+- 工具页「文件同步」进入，顶部用「连接方式」在「WiFi / 局域网」与「蓝牙」之间切换
 - WiFi：填电脑上 DevToolbox「文件同步」的地址（如 `192.168.1.8:45872`），选一个手机同步文件夹；
   之后每 3 秒拉一次清单，电脑上有新增 / 修改的文件就下载，手机上有新增 / 修改的文件就上传
 - 电脑端会记住连上来的每台设备（名称 / IP / 最近同步时间），支持多台手机同时同步
@@ -91,20 +93,20 @@ gradlew.bat :app:assembleDebug
 ./gradlew :app:assembleDebug
 ```
 
-产物：`app/build/outputs/apk/debug/android-tools-1.2.0-debug.apk`
+产物：`app/build/outputs/apk/debug/android-tools-1.3.3-debug.apk`
 
 产物文件名统一带版本号（`android-tools-<versionName>-<buildType>.apk`，未签名的 release 追加
 `-unsigned`），版本号取自 `defaultConfig.versionName`，改版本号后文件名自动跟随：
 
 | 命令 | 产物 |
 | --- | --- |
-| `:app:assembleDebug` | `app/build/outputs/apk/debug/android-tools-1.2.0-debug.apk` |
-| `:app:assembleRelease` | `app/build/outputs/apk/release/android-tools-1.1.1-release-unsigned.apk` |
+| `:app:assembleDebug` | `app/build/outputs/apk/debug/android-tools-1.3.3-debug.apk` |
+| `:app:assembleRelease` | `app/build/outputs/apk/release/android-tools-1.3.3-release-unsigned.apk` |
 
-安装：
+安装（debug 包名带 `.debug` 后缀）：
 
 ```bash
-adb install -r app/build/outputs/apk/debug/android-tools-1.2.0-debug.apk
+adb install -r app/build/outputs/apk/debug/android-tools-1.3.3-debug.apk
 ```
 
 > **网络提示**：`gradle/wrapper/gradle-wrapper.properties` 中的 `distributionUrl` 当前指向腾讯云镜像
@@ -119,19 +121,22 @@ adb install -r app/build/outputs/apk/debug/android-tools-1.2.0-debug.apk
 ## 使用
 
 1. 打开应用，首次录制时按提示授予「通知」「麦克风」权限。
-2. 在「设置」中选择录制范围、分辨率、帧率、码率、声音来源与保存位置。
-3. 回到「工具」页，点击「屏幕录制」卡片里的录制按钮；系统会弹出屏幕捕获授权（Android 14+ 可在弹窗中选择「单个应用」）。
-4. 录制过程中可以在卡片内、悬浮按钮或通知栏暂停 / 继续 / 停止；停止后会自动跳到「文件」页。
+2. 在「设置 → 工具设置 → 录屏工具」中选择录制范围、分辨率、帧率、码率、声音来源与保存位置
+   （也可以直接点录屏工具页右上角的齿轮）。
+3. 回到「工具」页，点「录屏工具」卡片进入工具页，点击中间的录制按钮；系统会弹出屏幕捕获授权
+   （Android 14+ 可在弹窗中选择「单个应用」）。
+4. 录制过程中可以在卡片内、悬浮按钮或通知栏暂停 / 继续 / 停止；停止后文件会出现在工具页的
+   「录制文件」区域，点「全部」可以播放 / 分享 / 删除。
 
 ### 新增工具（扩展点）
 
-界面从一开始就按「多个工具」设计，新增工具不需要动首页布局：
+界面从一开始就按「多个工具」设计，新增工具不需要动工具页布局：
 
 1. 在 `ui/ToolRegistry.kt` 的 `ToolId` 里加一项；
 2. 在 `ToolRegistry.tools` 里加一条 `ToolSpec`（标题、说明、图标、强调色；占位用 `ToolStatus.PLANNED`）；
-3. 可用的工具，在 `ui/RecorderApp.kt` 的 `AppTab.TOOLS` 分支里挂上它自己的界面（或按 `tool.id` 分发）。
+3. 在 `ui/RecorderApp.kt` 的 `Route` 里加一个页面，并在 `ToolHubScreen` 的分发处把 `tool.id` 映射到它。
 
-首页的「更多工具」网格、工具卡片配色、以及「即将推出」提示都会自动生效。
+工具页的双列卡片网格、图标配色、以及卡片上的状态胶囊都会自动生效。
 
 ### 单应用录制说明
 
@@ -162,7 +167,7 @@ Android 的系统限制决定了「录制哪个应用」只能由**系统弹窗*
 ## 架构
 
 ```
-app/src/main/java/com/screenrecorder/app/
+app/src/main/java/com/android_tools/app/
 ├── MainActivity.kt                 Compose 入口
 ├── ScreenRecorderApp.kt
 ├── core/
@@ -184,18 +189,22 @@ app/src/main/java/com/screenrecorder/app/
 ├── apps/
 │   ├── InstalledApps.kt            已安装应用列表
 │   └── ForegroundAppMonitor.kt     前台应用检测（UsageStats）
+├── sync/                           WiFi / 蓝牙文件同步（1.2.0）
 ├── ui/
-│   ├── RecorderApp.kt              应用外壳：底部导航、权限/授权流程、倒计时
-│   ├── Theme.kt                    配色（深/浅色）、字体、形状、工具强调色
-│   ├── ToolRegistry.kt             工具箱注册表（新增工具在此登记）
-│   ├── ToolHubScreen.kt            首页：录制主卡片 + 更多工具 + 最近录制
-│   ├── RecordingsScreen.kt         录制文件列表
+│   ├── RecorderApp.kt              应用外壳：底部导航、页面栈（Route）、权限/授权流程、倒计时
+│   ├── Theme.kt                    配色（深/浅色）、字体、形状、应用与工具强调色
+│   ├── ToolRegistry.kt             工具注册表（新增工具在此登记）
+│   ├── ToolHubScreen.kt            工具页：双列工具卡片网格
+│   ├── RecorderToolScreen.kt       录屏工具页：录制控制 + 录制文件入口
+│   ├── RecorderSettingsScreen.kt   录屏设置二级页
+│   ├── SettingsScreen.kt           设置页：应用信息 + 工具设置目录
+│   ├── RecordingsScreen.kt         录制文件完整列表
 │   ├── RecordingCard.kt            录制文件卡片（缩略图 + 更多菜单）
 │   ├── VideoThumbnail.kt           视频首帧缩略图
-│   ├── SettingsScreen.kt           设置页
+│   ├── FileSyncScreen.kt           文件同步工具页
 │   ├── AppPickerDialog.kt          目标应用选择
 │   ├── AppIcon.kt                  应用图标（带缓存）
-│   └── Components.kt               通用组件：卡片、分组、选择/滑块对话框、空状态
+│   └── Components.kt               通用组件：标题栏、卡片、分组、选择/滑块对话框、空状态
 └── util/                           格式化、显示尺寸
 ```
 
@@ -224,6 +233,22 @@ app/src/main/java/com/screenrecorder/app/
   `logcat | grep coded.bitrate` 验证编码器实际收到的值。
 
 ---
+
+## 已验证（1.3.3 界面）
+
+在 Android 15（API 35，x86_64）模拟器上逐屏检查（深色 + 浅色）：
+
+| 场景 | 结果 |
+| --- | --- |
+| 应用标识 | 系统弹窗显示「工具库」，包名 `com.android_tools.app.debug`，自适应图标为需求提供的蓝色四宫格 |
+| 工具页 | 只有「录屏工具」「文件同步」两张卡片，双列网格，没有「更多工具」标题与假工具 |
+| 录屏工具页 | 标题栏（返回 / 齿轮）+ 录制卡片 + 「录制文件」区；录制中显示计时、文件名、暂停/停止 |
+| 停止录制 | 回到工具页后「录制文件」自动刷新出现新文件，并出现「全部」入口 |
+| 录制文件 | 「全部」进入完整列表（带返回），缩略图 / 时长角标 / 更多菜单（播放·分享·删除）正常 |
+| 设置页 | 应用信息卡 +「工具设置」目录 +「关于」，版本号显示 1.3.3；录屏参数已不在设置页 |
+| 录屏设置 | 从设置页和工具页齿轮两处都能进入，返回正常，分组与选择/滑块对话框正常 |
+| 文件同步 | 工具页可正常进入，同步目录路径已随包名变成 `com.android_tools.app.debug` |
+| 深色模式 | 卡片层次、底部导航、状态栏/导航栏图标正常 |
 
 ## 已验证（1.1.1 界面）
 
@@ -270,6 +295,25 @@ app/src/main/java/com/screenrecorder/app/
 
 ## 版本
 
+`1.3.3` — 应用更名 + 工具化改版，对应需求 `需求/version-1.3.2.MD`：
+
+- 应用名改为**工具库**；包名改为 `com.android_tools.app`（需求原文 `com.android-tools.app` 含连字符，
+  不是合法的 Java/Android 包名，按确认结果改用下划线）；图标换成需求提供的「工具箱」图标
+  （蓝色四宫格，`ic_launcher_foreground.xml` 由 SVG 转换，62% 缩放落在自适应图标安全区内）
+- 工具页重排：去掉「更多工具」标题与「截图 / 录音」两个占位工具，所有工具按双列卡片网格排布，
+  卡片状态胶囊显示「可用 / 录制中 / 已暂停」
+- 新增**录屏工具页**：录制控制 + 「录制文件」入口（最近 3 个 +「全部」）；录制结束后列表自动刷新
+- 「录制文件」从底部导航移入录屏工具，底部导航只剩「工具 / 设置」
+- 设置页只保留应用信息与「工具设置」目录，录屏相关设置移到「录屏设置」二级页
+  （设置页与录屏工具页齿轮两处都能进入）
+- 页面栈改成可返回的 `Route` 栈：返回键、点底部导航回顶层，进程被回收后仍能恢复到原来那页
+- versionName `1.3.3` / versionCode 10
+
+`1.2.0` — 新增「文件同步」工具，对应需求 `需求/version-1.2.0.MD`：
+
+- WiFi / 局域网与电脑上的 DevToolbox 双向同步，支持多台设备；蓝牙在手机之间互传
+- 同步运行时拉起前台服务保活，同步记录、单文件大小上限、自定义同步目录可配置
+
 `1.1.1` — 界面重构，对应需求 `需求/version-1.1.1.MD`：
 
 - 首页改为**工具箱**结构：屏幕录制是渐变主卡片（录制中直接显示计时与暂停/停止），
@@ -282,8 +326,8 @@ app/src/main/java/com/screenrecorder/app/
 - 建立统一设计体系：`Theme.kt` 里集中定义 Typography / Shapes / 工具强调色渐变；深色配色重新调校，
   状态栏与导航栏图标跟随主题（运行中切换深色模式也即时刷新）
 - 空状态、倒计时弹窗、删除确认等细节重新设计
-- 构建产物文件名带版本号：`android-tools-1.2.0-debug.apk` / `android-tools-1.1.1-release-unsigned.apk`
-  （版本号取自 `defaultConfig.versionName`，自动跟随）
+- 构建产物文件名带版本号（`android-tools-<versionName>-<buildType>.apk`，版本号取自
+  `defaultConfig.versionName`，自动跟随）
 - versionName `1.1.1` / versionCode 5
 
 `1.1.0` — 对应需求 `需求/version-1.1.0.MD`：

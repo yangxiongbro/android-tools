@@ -5,16 +5,16 @@ plugins {
 }
 
 android {
-    namespace = "com.screenrecorder.app"
+    namespace = "com.android_tools.app"
     compileSdk = 35
     buildToolsVersion = "35.0.1"
 
     defaultConfig {
-        applicationId = "com.screenrecorder.app"
+        applicationId = "com.android_tools.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.3.2"
+        versionCode = 10
+        versionName = "1.3.3"
 
         vectorDrawables { useSupportLibrary = true }
     }

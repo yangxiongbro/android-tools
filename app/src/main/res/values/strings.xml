@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">录屏助手</string>
+    <string name="app_name">工具库</string>
 
     <string name="notification_channel_name">屏幕录制</string>
     <string name="notification_channel_description">录制过程中显示状态与快捷操作</string>
