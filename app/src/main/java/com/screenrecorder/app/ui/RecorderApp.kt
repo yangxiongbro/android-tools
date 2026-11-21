@@ -116,6 +116,13 @@ fun RecorderApp() {
 
     var tab by rememberSaveable { mutableStateOf(AppTab.TOOLS) }
     var showAppPicker by remember { mutableStateOf(false) }
+    // 从「更多工具」进入的全屏工具页（目前只有文件同步）
+    // 用 rememberSaveable 存字符串：从系统文件选择器回来时进程可能被回收，
+    // 只有恢复到这一页，「更换同步文件夹」的回调才还能收到结果。
+    var openToolName by rememberSaveable { mutableStateOf("") }
+    val openTool: ToolId? = remember(openToolName) {
+        ToolId.entries.firstOrNull { it.name == openToolName }
+    }
     var countdown by remember { mutableIntStateOf(0) }
     var startSignal by remember { mutableIntStateOf(0) }
     var hasUsageAccess by remember { mutableStateOf(foregroundMonitor.hasPermission()) }
@@ -258,6 +265,10 @@ fun RecorderApp() {
         },
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            if (openTool == ToolId.FILE_SYNC) {
+                FileSyncScreen(onBack = { openToolName = "" })
+                return@Box
+            }
             when (tab) {
                 AppTab.TOOLS -> ToolHubScreen(
                     settings = settings,
@@ -271,14 +282,18 @@ fun RecorderApp() {
                     onOpenSettings = { tab = AppTab.SETTINGS },
                     onOpenFiles = { tab = AppTab.FILES },
                     onToolClick = { tool ->
-                        scope.launch {
-                            snackbarHostState.showSnackbar(
-                                if (tool.status == ToolStatus.PLANNED) {
-                                    "「${tool.title}」正在开发中，敬请期待"
-                                } else {
-                                    "「${tool.title}」暂未开放"
-                                },
-                            )
+                        if (tool.id == ToolId.FILE_SYNC) {
+                            openToolName = ToolId.FILE_SYNC.name
+                        } else {
+                            scope.launch {
+                                snackbarHostState.showSnackbar(
+                                    if (tool.status == ToolStatus.PLANNED) {
+                                        "「${tool.title}」正在开发中，敬请期待"
+                                    } else {
+                                        "「${tool.title}」暂未开放"
+                                    },
+                                )
+                            }
                         }
                     },
                 )

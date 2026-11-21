@@ -1,6 +1,7 @@
 package com.screenrecorder.app.ui
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FolderShared
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.Videocam
@@ -18,6 +19,7 @@ enum class ToolId {
     SCREEN_RECORDING,
     SCREENSHOT,
     AUDIO_RECORDING,
+    FILE_SYNC,
 }
 
 /**
@@ -72,6 +74,13 @@ object ToolRegistry {
             icon = Icons.Outlined.Mic,
             accent = AppAccents.Audio,
             status = ToolStatus.PLANNED,
+        ),
+        ToolSpec(
+            id = ToolId.FILE_SYNC,
+            title = "文件同步",
+            summary = "WiFi 与电脑同步 / 蓝牙互传",
+            icon = Icons.Outlined.FolderShared,
+            accent = AppAccents.Screenshot,
         ),
     )
 

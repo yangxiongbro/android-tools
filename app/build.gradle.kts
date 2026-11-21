@@ -13,8 +13,8 @@ android {
         applicationId = "com.screenrecorder.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 5
-        versionName = "1.1.1"
+        versionCode = 9
+        versionName = "1.3.2"
 
         vectorDrawables { useSupportLibrary = true }
     }

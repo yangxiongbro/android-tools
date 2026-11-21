@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 「打开同步文件夹」用：把应用默认同步目录暴露给系统文件管理器 -->
+<paths>
+    <external-files-path name="sync" path="sync/" />
+    <files-path name="internal_sync" path="sync/" />
+</paths>

@@ -40,6 +40,32 @@ Android 屏幕录制应用：可以录制**整个屏幕**，也可以在 Android
 - 文件名前缀可配置，默认 `ScreenRecorder_20260101_120000.mp4`
 - 应用内列表：缩略图 / 播放 / 分享 / 删除
 
+**文件同步（1.2.0 新增）**
+- 首页「更多工具 → 文件同步」进入，顶部用「连接方式」在「WiFi / 局域网」与「蓝牙」之间切换
+- WiFi：填电脑上 DevToolbox「文件同步」的地址（如 `192.168.1.8:45872`），选一个手机同步文件夹；
+  之后每 3 秒拉一次清单，电脑上有新增 / 修改的文件就下载，手机上有新增 / 修改的文件就上传
+- 电脑端会记住连上来的每台设备（名称 / IP / 最近同步时间），支持多台手机同时同步
+- 蓝牙同步：分块帧头新增 `z`（本帧负载长度），修掉大文件 / 图片传输时偶发的 `cannot be converted to JSONObject` 错位
+- 文件同步：**只按大小过滤，不再限制文件类型** —— 图片 / 视频 / 压缩包 / 二进制都会同步；单个文件上限默认 **100 MB**，可在同步页顶部改（1 - 4096 MB）
+- 文件同步：同步运行时拉起前台服务（常驻通知），**后台不会因为系统冻结而收不到文件**
+- 文件同步页面：**WiFi 与蓝牙合并成一个页面**，顶部用「连接方式」分段按钮切换（不再分两个 Tab）；两种连接方式共用同一个同步目录，「更换同步文件夹」在两个模式下都有，改完立刻生效
+- 蓝牙：**自动同步** —— 选一台已配对的设备（电脑或另一台手机）点「开启蓝牙同步」，两边同步文件夹里的新增 / 修改会自动互传，和 WiFi 同步一样（不需要 WiFi）；
+  连接按「标准 SPP → 通道 1 → 不加密 SPP」依次重试，并先 cancelDiscovery（修复 read ret: -1）
+- 只处理不超过大小上限的普通文件（默认 100 MB），跳过隐藏文件与 `.tmp` / `.part` 临时文件
+- 没选 SAF 目录时用应用默认目录（`Android/data/<包名>/files/sync`），开箱即用；也可以随时换成任意文件夹
+- 「打开同步文件夹」按钮（WiFi 与蓝牙两个标签页都有）：直接跳到**当前真正在用的**同步目录 —— 换过目录就直接进那个文件夹（用 document uri 打开，不会停在上级目录），没换过就进应用默认目录
+- 两个标签页都会显示「同步目录：xxx（自定义 / 默认）」，自定义目录授权失效时显示「不可写 → 用默认目录」并自动退回默认目录，不会悄悄丢文件
+- 换目录时会有 Toast + 「同步记录」确认；万一系统把选择结果弄丢了（三星 My Files 等机型返回时进程被回收），WiFi 页会列出「已授权但没用上的目录」，点一下就能切过去；工具页状态改成 rememberSaveable，进程被回收后还能回到文件同步页把结果接住
+- 收到文件时日志会带上完整落盘路径（`收到 xxx → /storage/emulated/0/Android/data/.../sync/xxx`），方便确认文件到底存哪了
+
+| 连接方式：WiFi / 局域网 | 连接方式：蓝牙 |
+| --- | --- |
+| ![文件同步 WiFi](docs/screenshot-file-sync-wifi.png) | ![文件同步 蓝牙](docs/screenshot-file-sync-bluetooth.png) |
+
+「打开同步文件夹」会直接用系统文件管理器打开同步目录（默认目录走 ExternalStorageProvider，SAF 目录直接打开对应文件夹）：
+
+![打开同步文件夹](docs/screenshot-file-sync-open.png)
+
 ---
 
 ## 环境要求
@@ -65,20 +91,20 @@ gradlew.bat :app:assembleDebug
 ./gradlew :app:assembleDebug
 ```
 
-产物：`app/build/outputs/apk/debug/android-tools-1.1.1-debug.apk`
+产物：`app/build/outputs/apk/debug/android-tools-1.2.0-debug.apk`
 
 产物文件名统一带版本号（`android-tools-<versionName>-<buildType>.apk`，未签名的 release 追加
 `-unsigned`），版本号取自 `defaultConfig.versionName`，改版本号后文件名自动跟随：
 
 | 命令 | 产物 |
 | --- | --- |
-| `:app:assembleDebug` | `app/build/outputs/apk/debug/android-tools-1.1.1-debug.apk` |
+| `:app:assembleDebug` | `app/build/outputs/apk/debug/android-tools-1.2.0-debug.apk` |
 | `:app:assembleRelease` | `app/build/outputs/apk/release/android-tools-1.1.1-release-unsigned.apk` |
 
 安装：
 
 ```bash
-adb install -r app/build/outputs/apk/debug/android-tools-1.1.1-debug.apk
+adb install -r app/build/outputs/apk/debug/android-tools-1.2.0-debug.apk
 ```
 
 > **网络提示**：`gradle/wrapper/gradle-wrapper.properties` 中的 `distributionUrl` 当前指向腾讯云镜像
@@ -256,7 +282,7 @@ app/src/main/java/com/screenrecorder/app/
 - 建立统一设计体系：`Theme.kt` 里集中定义 Typography / Shapes / 工具强调色渐变；深色配色重新调校，
   状态栏与导航栏图标跟随主题（运行中切换深色模式也即时刷新）
 - 空状态、倒计时弹窗、删除确认等细节重新设计
-- 构建产物文件名带版本号：`android-tools-1.1.1-debug.apk` / `android-tools-1.1.1-release-unsigned.apk`
+- 构建产物文件名带版本号：`android-tools-1.2.0-debug.apk` / `android-tools-1.1.1-release-unsigned.apk`
   （版本号取自 `defaultConfig.versionName`，自动跟随）
 - versionName `1.1.1` / versionCode 5
 
