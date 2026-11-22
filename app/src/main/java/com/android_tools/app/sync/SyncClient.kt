@@ -92,12 +92,26 @@ class SyncClient(baseAddress: String) {
         }
     }
 
-    fun download(path: String): ByteArray? {
+    fun download(path: String, onProgress: ((Long, Long) -> Unit)? = null): ByteArray? {
         val encoded = URLEncoder.encode(path, "UTF-8")
         val connection = open("/sync/download?path=$encoded", "GET") ?: return null
         return try {
-            if (connection.responseCode !in 200..299) null
-            else BufferedInputStream(connection.inputStream).use { it.readBytes() }
+            if (connection.responseCode !in 200..299) {
+                null
+            } else {
+                val total = connection.contentLengthLong.coerceAtLeast(0L)
+                val buffer = ByteArray(16 * 1024)
+                val out = java.io.ByteArrayOutputStream()
+                BufferedInputStream(connection.inputStream).use { input ->
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        out.write(buffer, 0, read)
+                        onProgress?.invoke(out.size().toLong(), total)
+                    }
+                }
+                out.toByteArray()
+            }
         } catch (error: Exception) {
             null
         } finally {
@@ -105,7 +119,12 @@ class SyncClient(baseAddress: String) {
         }
     }
 
-    fun upload(path: String, bytes: ByteArray, deviceId: String): Boolean {
+    fun upload(
+        path: String,
+        bytes: ByteArray,
+        deviceId: String,
+        onProgress: ((Long, Long) -> Unit)? = null,
+    ): Boolean {
         val encodedPath = URLEncoder.encode(path, "UTF-8")
         val encodedDevice = URLEncoder.encode(deviceId, "UTF-8")
         val connection = open("/sync/upload?path=$encodedPath&device=$encodedDevice", "POST") ?: return false
@@ -113,7 +132,16 @@ class SyncClient(baseAddress: String) {
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/octet-stream")
             connection.setFixedLengthStreamingMode(bytes.size)
-            connection.outputStream.use { it.write(bytes) }
+            connection.outputStream.use { output ->
+                val buffer = 16 * 1024
+                var offset = 0
+                while (offset < bytes.size) {
+                    val length = minOf(buffer, bytes.size - offset)
+                    output.write(bytes, offset, length)
+                    offset += length
+                    onProgress?.invoke(offset.toLong(), bytes.size.toLong())
+                }
+            }
             connection.responseCode in 200..299
         } catch (error: Exception) {
             false

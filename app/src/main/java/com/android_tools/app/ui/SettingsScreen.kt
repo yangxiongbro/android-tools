@@ -55,8 +55,6 @@ fun SettingsScreen(
 
         Spacer(Modifier.padding(top = 8.dp))
 
-        AppBanner(version = version)
-
         SettingsGroup(title = "工具设置", icon = Icons.Outlined.Apps) {
             SettingsRow(
                 title = "录屏工具",
@@ -68,7 +66,7 @@ fun SettingsScreen(
             RowDivider()
             SettingsRow(
                 title = "文件同步",
-                subtitle = "同步文件夹、连接地址在工具页内设置",
+                subtitle = "同步目录、单个文件大小上限",
                 leading = Icons.Outlined.FolderShared,
                 leadingTint = AppAccents.Sync[1],
                 onClick = onOpenFileSync,
@@ -89,50 +87,5 @@ fun SettingsScreen(
             )
         }
 
-        Column(
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = "工具库 · $version",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
-            )
-        }
-    }
-}
-
-/** 顶部应用信息卡：应用名、定位说明与当前版本号。 */
-@Composable
-private fun AppBanner(version: String) {
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        tonalElevation = 1.dp,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-    ) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconBadge(
-                icon = Icons.Filled.Dashboard,
-                accent = AppAccents.Brand,
-                size = 46.dp,
-                iconSize = 24.dp,
-            )
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = "工具库", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    text = "本地工具集，数据不会上传",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            PillBadge(
-                text = "v$version",
-                container = AppAccents.Brand.first().copy(alpha = 0.14f),
-                content = AppAccents.Brand.last(),
-            )
-        }
     }
 }

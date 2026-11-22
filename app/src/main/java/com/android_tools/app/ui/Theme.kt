@@ -25,6 +25,7 @@ object AppAccents {
     val Brand = listOf(Color(0xFF35B0F2), Color(0xFF1296DB), Color(0xFF0B6FB3))
     val Record = listOf(Color(0xFFF4665F), Color(0xFFE5484D), Color(0xFFC72F5A))
     val Sync = listOf(Color(0xFFA794FF), Color(0xFF8B7CF6), Color(0xFF6C5CE7))
+    val Chat = listOf(Color(0xFF4ADE80), Color(0xFF22C55E), Color(0xFF15A34A))
 }
 
 private val DarkColors = darkColorScheme(

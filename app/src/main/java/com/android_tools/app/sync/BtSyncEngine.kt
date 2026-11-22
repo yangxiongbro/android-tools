@@ -11,6 +11,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import com.android_tools.app.notify.Notify
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -33,6 +34,8 @@ class BtSyncEngine(
     private val engine: SyncEngine,
     private val onLog: (String) -> Unit,
     private val onState: (running: Boolean, device: String, sent: Int, received: Int) -> Unit,
+    /** 传输进度（null 表示当前没有传输） */
+    private val onProgress: (TransferInfo?) -> Unit = {},
 ) {
     companion object {
         private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
@@ -56,6 +59,8 @@ class BtSyncEngine(
     private val incomingMeta = HashMap<String, Pair<Long, Long>>()
     /** 刚收到的文件：path → (发送方 mtime, 落盘 mtime)。SAF 目录改不了 mtime，上报时用它顶替 */
     private val receivedStamps = HashMap<String, Pair<Long, Long>>()
+    /** 开启同步那一刻的指纹：只有之后新增 / 改动的文件才参与同步 */
+    private var baseline: MutableMap<String, String> = HashMap()
 
     val isRunning: Boolean get() = scope != null
 
@@ -70,6 +75,9 @@ class BtSyncEngine(
         incomingMeta.clear()
 
         SyncKeepAliveService.start(engine.context())
+        baseline = engine.listSyncItems().associate { item ->
+            item.path to "${item.size}:${item.document.lastModified()}"
+        }.toMutableMap()
         val current = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         scope = current
         onState(true, deviceName, 0, 0)
@@ -128,6 +136,7 @@ class BtSyncEngine(
     }
 
     fun stop() {
+        runCatching { Notify.clearSync(engine.context()) }
         val current = scope ?: return
         runCatching { SyncKeepAliveService.stop(engine.context()) }
         scope = null
@@ -135,11 +144,25 @@ class BtSyncEngine(
         socket = null
         output = null
         runCatching { current.cancel() }
+        onProgress(null)
         onState(false, deviceName, sentCount, receivedCount)
         onLog("蓝牙同步已停止")
     }
 
     /** 连接：标准 SPP → 通道 1 → 不加密 SPP，依次重试 */
+    /** 蓝牙传输也把进度放到通知栏 */
+    private fun notifyProgress(info: TransferInfo) {
+        if (info.total <= 0) return
+        runCatching {
+            Notify.syncProgress(
+                context = engine.context(),
+                title = if (info.outgoing) "正在发送 ${info.path}" else "正在接收 ${info.path}",
+                text = "${info.percent}% · ${info.sent / 1024} KB / ${info.total / 1024} KB",
+                percent = info.percent,
+            )
+        }
+    }
+
     private fun connect(device: BluetoothDevice): BluetoothSocket {
         var lastError: Exception? = null
 
@@ -197,16 +220,19 @@ class BtSyncEngine(
         val items = engine.listSyncItems()
         // SAF 目录写文件后改不了修改时间：刚收到的文件按发送方的 mtime 上报，
         // 否则「电脑发过来 → 手机报了个新时间 → 电脑又去拉回来」会来回同步。
+        val changedItems = items.filter { item ->
+            baseline[item.path] != "${item.size}:${item.document.lastModified()}"
+        }
         fun reportedMtime(item: SyncEngine.LocalItem): Long {
             val disk = item.document.lastModified()
             val stamp = receivedStamps[item.path] ?: return disk
             return if (kotlin.math.abs(disk - stamp.second) <= 2000) stamp.first else disk
         }
-        val version = manifestVersion(items, ::reportedMtime)
+        val version = manifestVersion(changedItems, ::reportedMtime)
         if (!force && version == lastVersion) return
         lastVersion = version
         val files = JSONArray()
-        for (item in items) {
+        for (item in changedItems) {
             files.put(
                 JSONObject()
                     .put("p", item.path)
@@ -287,8 +313,13 @@ class BtSyncEngine(
                 chunk
             )
             offset += length
+            val info = TransferInfo(path, offset.toLong(), bytes.size.toLong(), outgoing = true)
+            onProgress(info)
+            notifyProgress(info)
         }
         sentCount += 1
+        onProgress(null)
+        runCatching { Notify.clearSync(engine.context()) }
         onLog("已发送 $path（${bytes.size / 1024} KB）")
         onState(true, deviceName, sentCount, receivedCount)
     }
@@ -310,6 +341,9 @@ class BtSyncEngine(
             buffer.reset()
         }
         buffer.write(payload)
+        val info = TransferInfo(path, buffer.size().toLong(), size, outgoing = false)
+        onProgress(info)
+        notifyProgress(info)
 
         if (buffer.size().toLong() >= size) {
             val bytes = buffer.toByteArray()
@@ -318,9 +352,13 @@ class BtSyncEngine(
             requested.remove(path)
             if (engine.writeSyncFile(path, bytes)) {
                 meta?.second?.takeIf { it > 0 }?.let { engine.touchSyncFile(path, it) }
-                val disk = engine.listSyncItems().firstOrNull { it.path == path }?.document?.lastModified() ?: 0L
+                val localItem = engine.listSyncItems().firstOrNull { it.path == path }
+                val disk = localItem?.document?.lastModified() ?: 0L
                 meta?.second?.takeIf { it > 0 }?.let { receivedStamps[path] = it to disk }
+                if (localItem != null) baseline[path] = "${localItem.size}:${disk}"
                 receivedCount += 1
+                onProgress(null)
+                runCatching { Notify.clearSync(engine.context()) }
                 // 日志里带上落盘路径，出问题时一眼能看出存到哪了
                 onLog("收到 $path（${bytes.size / 1024} KB）→ ${engine.describeSyncTarget(path)}")
                 onState(true, deviceName, sentCount, receivedCount)

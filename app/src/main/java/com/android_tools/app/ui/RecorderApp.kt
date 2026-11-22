@@ -1,5 +1,6 @@
 package com.android_tools.app.ui
 
+import com.android_tools.app.chat.LocalChatScreen
 import android.Manifest
 import android.app.Activity
 import android.content.Context
@@ -107,6 +108,8 @@ enum class Route {
     RECORDINGS,
     RECORDER_SETTINGS,
     FILE_SYNC,
+    FILE_SYNC_SETTINGS,
+    LOCAL_CHAT,
 }
 
 @Composable
@@ -323,6 +326,10 @@ fun RecorderApp() {
 
                 Route.FILE_SYNC -> FileSyncScreen(onBack = pop)
 
+                Route.FILE_SYNC_SETTINGS -> FileSyncSettingsScreen(onBack = pop)
+
+                Route.LOCAL_CHAT -> LocalChatScreen(onBack = pop)
+
                 null -> when (tab) {
                     AppTab.TOOLS -> ToolHubScreen(
                         recorderState = recorderState,
@@ -330,13 +337,14 @@ fun RecorderApp() {
                             when (tool.id) {
                                 ToolId.SCREEN_RECORDING -> push(Route.RECORDER_TOOL)
                                 ToolId.FILE_SYNC -> push(Route.FILE_SYNC)
+                            ToolId.LOCAL_CHAT -> push(Route.LOCAL_CHAT)
                             }
                         },
                     )
 
                     AppTab.SETTINGS -> SettingsScreen(
                         onOpenRecorderSettings = { push(Route.RECORDER_SETTINGS) },
-                        onOpenFileSync = { push(Route.FILE_SYNC) },
+                        onOpenFileSync = { push(Route.FILE_SYNC_SETTINGS) },
                     )
                 }
             }

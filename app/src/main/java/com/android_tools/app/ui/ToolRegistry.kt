@@ -1,6 +1,7 @@
 package com.android_tools.app.ui
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Chat
 import androidx.compose.material.icons.outlined.FolderShared
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.ui.graphics.Color
@@ -16,6 +17,7 @@ enum class ToolStatus(val label: String) {
 enum class ToolId {
     SCREEN_RECORDING,
     FILE_SYNC,
+    LOCAL_CHAT,
 }
 
 /**
@@ -56,6 +58,13 @@ object ToolRegistry {
             summary = "WiFi 与电脑同步 / 蓝牙互传",
             icon = Icons.Outlined.FolderShared,
             accent = AppAccents.Sync,
+        ),
+        ToolSpec(
+            id = ToolId.LOCAL_CHAT,
+            title = "本地聊天",
+            summary = "局域网内点对点聊天，消息端到端加密",
+            icon = Icons.Outlined.Chat,
+            accent = AppAccents.Chat,
         ),
     )
 

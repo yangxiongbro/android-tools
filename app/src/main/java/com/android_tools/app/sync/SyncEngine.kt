@@ -14,8 +14,20 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
+import com.android_tools.app.notify.Notify
 import kotlinx.coroutines.launch
 import java.util.UUID
+
+/** 正在传输的文件（用于显示进度百分比） */
+data class TransferInfo(
+    val path: String,
+    val sent: Long,
+    val total: Long,
+    val outgoing: Boolean,
+) {
+    val percent: Int
+        get() = if (total <= 0) 0 else ((sent * 100) / total).toInt().coerceIn(0, 100)
+}
 
 /** 同步界面用到的状态。 */
 data class SyncUiState(
@@ -31,6 +43,8 @@ data class SyncUiState(
     val logs: List<SyncLogEntry> = emptyList(),
     /** 单个文件大小上限（MB），默认 100 */
     val maxFileMb: Int = 100,
+    /** 正在传输的文件与进度（WiFi / 蓝牙共用一块显示） */
+    val transfer: TransferInfo? = null,
 ) {
     /** 没有用 SAF 选目录时，用应用自己的同步目录，开箱即用 */
     val folderReady: Boolean = true
@@ -66,6 +80,8 @@ class SyncEngine(context: Context) {
 
     /** 已经处理过的本地文件：path:size，避免重复上传 */
     private val uploadedKeys = HashSet<String>()
+    /** 开启同步那一刻的指纹：只有之后新增 / 改动的文件才上传 */
+    private var baseline: Map<String, String>? = null
 
     private val deviceId: String by lazy {
         prefs.getString(KEY_DEVICE_ID, null) ?: run {
@@ -96,6 +112,24 @@ class SyncEngine(context: Context) {
 
     /** 给蓝牙同步用：拿应用上下文起前台服务 */
     fun context(): Context = appContext
+
+    /** 更新传输状态，同时把进度同步到通知栏 */
+    private fun setTransfer(info: TransferInfo?) {
+        _state.value = _state.value.copy(transfer = info)
+        if (info == null || info.total <= 0) {
+            Notify.clearSync(appContext)
+        } else {
+            Notify.syncProgress(
+                context = appContext,
+                title = if (info.outgoing) "正在发送 ${info.path}" else "正在接收 ${info.path}",
+                text = "${info.percent}% · ${info.sent / 1024} KB / ${info.total / 1024} KB",
+                percent = info.percent,
+            )
+        }
+    }
+
+    /** 单个文件上限（MB） */
+    fun maxFileMb(): Int = _state.value.maxFileMb.coerceIn(1, 4096)
 
     /** 单个文件上限（字节） */
     fun maxFileBytes(): Long = _state.value.maxFileMb.coerceIn(1, 4096).toLong() * 1024 * 1024
@@ -139,6 +173,8 @@ class SyncEngine(context: Context) {
             log("请先选择手机上的同步文件夹")
             return
         }
+        // 开启同步时打基线：此前的文件视为已同步，不再整目录上传
+        baseline = collectLocal().associate { it.path to "${it.size}:${it.document.lastModified()}" }
         client = SyncClient(address)
         job?.cancel()
         _state.value = _state.value.copy(running = true, lastError = "")
@@ -150,6 +186,8 @@ class SyncEngine(context: Context) {
         SyncKeepAliveService.stop(appContext)
         job?.cancel()
         job = null
+        baseline = null
+        setTransfer(null)
         _state.value = _state.value.copy(running = false, connected = false)
         log("已停止同步")
     }
@@ -196,7 +234,10 @@ class SyncEngine(context: Context) {
         for (file in manifest.files) {
             val known = remoteSnapshot[file.path]
             if (known != null && known.size == file.size && known.mtime == file.mtime) continue
-            val bytes = syncClient.download(file.path) ?: continue
+            val bytes = syncClient.download(file.path) { sent, total ->
+                setTransfer(TransferInfo(file.path, sent, total, outgoing = false))
+            } ?: continue
+            setTransfer(null)
             if (writeDocument(file.path, bytes)) {
                 remoteSnapshot[file.path] = file
                 uploadedKeys += "${file.path}:${bytes.size}"
@@ -210,6 +251,8 @@ class SyncEngine(context: Context) {
     private fun pushLocal(syncClient: SyncClient, manifest: RemoteManifest) {
         val remotePaths = manifest.files.map { it.path }.toHashSet()
         collectLocal().forEach { item ->
+            val stamp = "${item.size}:${item.document.lastModified()}"
+            if (baseline?.get(item.path) == stamp) return@forEach
             val key = "${item.path}:${item.size}"
             if (key in uploadedKeys) return@forEach
             val remote = manifest.files.firstOrNull { it.path == item.path }
@@ -218,7 +261,11 @@ class SyncEngine(context: Context) {
                 return@forEach
             }
             val bytes = readDocument(item) ?: return@forEach
-            if (syncClient.upload(item.path, bytes, deviceId)) {
+            val uploaded = syncClient.upload(item.path, bytes, deviceId) { sent, total ->
+                setTransfer(TransferInfo(item.path, sent, total, outgoing = true))
+            }
+            setTransfer(null)
+            if (uploaded) {
                 uploadedKeys += key
                 _state.value = _state.value.copy(uploaded = _state.value.uploaded + 1)
                 log("上传 ${item.path}（${bytes.size / 1024} KB）")
