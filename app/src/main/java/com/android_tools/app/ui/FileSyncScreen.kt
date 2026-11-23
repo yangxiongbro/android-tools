@@ -335,10 +335,21 @@ fun FileSyncScreen(onBack: () -> Unit, onOpenSettings: () -> Unit) {
                             progress = { transfer.sent.toFloat() / transfer.total.toFloat() },
                             modifier = Modifier.fillMaxWidth().height(6.dp),
                         )
-                        Text(
-                            "${transfer.percent}% · ${transfer.sent / 1024} KB / ${transfer.total / 1024} KB",
-                            style = MaterialTheme.typography.labelSmall,
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "${transfer.percent}% · ${transfer.sent / 1024} KB / ${transfer.total / 1024} KB",
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            OutlinedButton(
+                                onClick = { if (tab == 0) engine.cancelTransfer() else btSync.cancelTransfer() },
+                            ) {
+                                Text("取消", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
                     } else {
                         Text("当前没有正在传输的文件", style = MaterialTheme.typography.bodySmall)
                     }

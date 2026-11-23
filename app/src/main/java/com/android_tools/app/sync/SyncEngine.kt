@@ -73,6 +73,12 @@ class SyncEngine(context: Context) {
     val state: StateFlow<SyncUiState> = _state.asStateFlow()
 
     private var job: Job? = null
+    /** 用户取消过的文件；本次同步内不再自动重试，重新点「开始同步」会清空 */
+    private val cancelledPaths = HashSet<String>()
+
+    /** 点「取消」后置位，正在传输的文件会被中止，当前这一轮也不再继续 */
+    @Volatile
+    private var cancelRequested = false
     private var client: SyncClient? = null
 
     /** 远端文件表：path → 上次同步时的 size/mtime，用来判断「远端变了没有」 */
@@ -112,6 +118,21 @@ class SyncEngine(context: Context) {
 
     /** 给蓝牙同步用：拿应用上下文起前台服务 */
     fun context(): Context = appContext
+
+    /** 取消正在进行的传输（当前文件中断，这一轮剩下的文件也不再传） */
+    fun cancelTransfer() {
+        // 先记下正在传的是什么，再清状态（清完 transfer 就没了）
+        val info = _state.value.transfer
+        setTransfer(null)
+        if (info == null) {
+            // 没有正在传输的文件：点一下只是提示，不留下标记去打断下一次
+            log("当前没有正在传输的文件")
+            return
+        }
+        cancelRequested = true
+        cancelledPaths.add(info.path)
+        log("已取消传输：${info.path}（本次同步不再重试）")
+    }
 
     /** 更新传输状态，同时把进度同步到通知栏 */
     private fun setTransfer(info: TransferInfo?) {
@@ -187,6 +208,7 @@ class SyncEngine(context: Context) {
         job?.cancel()
         job = null
         baseline = null
+        cancelledPaths.clear()
         setTransfer(null)
         _state.value = _state.value.copy(running = false, connected = false)
         log("已停止同步")
@@ -234,9 +256,21 @@ class SyncEngine(context: Context) {
         for (file in manifest.files) {
             val known = remoteSnapshot[file.path]
             if (known != null && known.size == file.size && known.mtime == file.mtime) continue
-            val bytes = syncClient.download(file.path) { sent, total ->
-                setTransfer(TransferInfo(file.path, sent, total, outgoing = false))
-            } ?: continue
+            if (file.path in cancelledPaths) continue
+            cancelRequested = false
+            val bytes = syncClient.download(
+                file.path,
+                { sent, total -> setTransfer(TransferInfo(file.path, sent, total, outgoing = false)) },
+                { cancelRequested },
+            )
+            if (bytes == null) {
+                if (cancelRequested) {
+                    cancelRequested = false
+                    setTransfer(null)
+                    break
+                }
+                continue
+            }
             setTransfer(null)
             if (writeDocument(file.path, bytes)) {
                 remoteSnapshot[file.path] = file
@@ -255,16 +289,24 @@ class SyncEngine(context: Context) {
             if (baseline?.get(item.path) == stamp) return@forEach
             val key = "${item.path}:${item.size}"
             if (key in uploadedKeys) return@forEach
+            if (item.path in cancelledPaths) return@forEach
             val remote = manifest.files.firstOrNull { it.path == item.path }
             if (remote != null && remote.size == item.size) {
                 uploadedKeys += key
                 return@forEach
             }
             val bytes = readDocument(item) ?: return@forEach
-            val uploaded = syncClient.upload(item.path, bytes, deviceId) { sent, total ->
+            cancelRequested = false
+            val uploaded = syncClient.upload(item.path, bytes, deviceId, { sent, total ->
                 setTransfer(TransferInfo(item.path, sent, total, outgoing = true))
-            }
+            }, { cancelRequested })
             setTransfer(null)
+            if (!uploaded && cancelRequested) {
+                cancelRequested = false
+                cancelledPaths.add(item.path)
+                log("已取消上传：${item.path}（本次同步不再重试）")
+                return@forEach
+            }
             if (uploaded) {
                 uploadedKeys += key
                 _state.value = _state.value.copy(uploaded = _state.value.uploaded + 1)

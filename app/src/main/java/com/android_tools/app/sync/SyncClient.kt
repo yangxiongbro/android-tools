@@ -92,7 +92,11 @@ class SyncClient(baseAddress: String) {
         }
     }
 
-    fun download(path: String, onProgress: ((Long, Long) -> Unit)? = null): ByteArray? {
+    fun download(
+        path: String,
+        onProgress: ((Long, Long) -> Unit)? = null,
+        isCancelled: () -> Boolean = { false },
+    ): ByteArray? {
         val encoded = URLEncoder.encode(path, "UTF-8")
         val connection = open("/sync/download?path=$encoded", "GET") ?: return null
         return try {
@@ -108,6 +112,10 @@ class SyncClient(baseAddress: String) {
                         if (read <= 0) break
                         out.write(buffer, 0, read)
                         onProgress?.invoke(out.size().toLong(), total)
+                        if (isCancelled()) {
+                            connection.disconnect()
+                            return null
+                        }
                     }
                 }
                 out.toByteArray()
@@ -124,6 +132,7 @@ class SyncClient(baseAddress: String) {
         bytes: ByteArray,
         deviceId: String,
         onProgress: ((Long, Long) -> Unit)? = null,
+        isCancelled: () -> Boolean = { false },
     ): Boolean {
         val encodedPath = URLEncoder.encode(path, "UTF-8")
         val encodedDevice = URLEncoder.encode(deviceId, "UTF-8")
@@ -140,6 +149,10 @@ class SyncClient(baseAddress: String) {
                     output.write(bytes, offset, length)
                     offset += length
                     onProgress?.invoke(offset.toLong(), bytes.size.toLong())
+                    if (isCancelled()) {
+                        connection.disconnect()
+                        return false
+                    }
                 }
             }
             connection.responseCode in 200..299

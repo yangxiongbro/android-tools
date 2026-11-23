@@ -150,6 +150,16 @@ class BtSyncEngine(
     }
 
     /** 连接：标准 SPP → 通道 1 → 不加密 SPP，依次重试 */
+    /** 取消正在进行的蓝牙传输（不断开连接） */
+    fun cancelTransfer() {
+        val active = cancelRequested || runCatching { engine.state.value.transfer != null }.getOrDefault(false)
+        cancelRequested = true
+        onProgress(null)
+        runCatching { Notify.clearSync(engine.context()) }
+        onLog(if (active) "已取消当前传输" else "当前没有正在传输的文件")
+        if (!active) cancelRequested = false
+    }
+
     /** 蓝牙传输也把进度放到通知栏 */
     private fun notifyProgress(info: TransferInfo) {
         if (info.total <= 0) return
@@ -316,6 +326,13 @@ class BtSyncEngine(
             val info = TransferInfo(path, offset.toLong(), bytes.size.toLong(), outgoing = true)
             onProgress(info)
             notifyProgress(info)
+            if (cancelRequested) {
+                cancelRequested = false
+                onProgress(null)
+                runCatching { Notify.clearSync(engine.context()) }
+                onLog("已取消发送 $path")
+                return
+            }
         }
         sentCount += 1
         onProgress(null)
@@ -344,6 +361,14 @@ class BtSyncEngine(
         val info = TransferInfo(path, buffer.size().toLong(), size, outgoing = false)
         onProgress(info)
         notifyProgress(info)
+        if (cancelRequested) {
+            cancelRequested = false
+            incoming.remove(path)
+            onProgress(null)
+            runCatching { Notify.clearSync(engine.context()) }
+            onLog("已取消接收 $path")
+            return
+        }
 
         if (buffer.size().toLong() >= size) {
             val bytes = buffer.toByteArray()
@@ -368,4 +393,8 @@ class BtSyncEngine(
             }
         }
     }
-}
+}    /** 点取消后置位，发送 / 接收循环里检查 */
+    @Volatile
+    private var cancelRequested = false
+
+
