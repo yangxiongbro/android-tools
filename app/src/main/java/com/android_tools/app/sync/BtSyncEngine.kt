@@ -164,10 +164,9 @@ class BtSyncEngine(
             return
         }
         skippedPaths.add(info.path)
-        // 通知电脑端别再发这个文件（它也会跳过，避免反复重传）
-        if (!info.outgoing) {
-            runCatching { sendFrame(JSONObject().put("t", "skip").put("p", info.path)) }
-        }
+        incoming.remove(info.path)
+        // 不管收发都通知对方：接收端要让发送端停，发送端要让接收端清掉半截缓冲
+        runCatching { sendFrame(JSONObject().put("t", "skip").put("p", info.path)) }
         onLog("已取消传输：${info.path}（本次同步不再重试）")
     }
 
@@ -281,11 +280,14 @@ class BtSyncEngine(
             "manifest" -> handleManifest(header.optJSONArray("files") ?: JSONArray())
             "want" -> handleWant(header.optString("p"))
             "skip" -> {
-                // 电脑端取消了这个文件：本次同步不再请求
+                // 对方取消了这个文件：本次不再请求，同时清掉可能存在的半截接收缓冲
                 val path = header.optString("p")
                 if (path.isNotEmpty()) {
                     skippedPaths.add(path)
-                    onLog("电脑端取消了 $path，本次同步不再请求")
+                    incoming.remove(path)
+                    onProgress(null)
+                    runCatching { Notify.clearSync(engine.context()) }
+                    onLog("对方取消了 $path，本次同步不再重试")
                 }
             }
             "file" -> handleFile(header, payload)
@@ -367,6 +369,21 @@ class BtSyncEngine(
         val offset = header.optLong("o", 0)
         val mtime = header.optLong("m", 0)
         if (path.isEmpty() || size > MAX_BYTES) return
+        // 本端取消过、或对方发了 skip：后续分块直接丢掉，不要再"复活"进度
+        if (path in skippedPaths) {
+            incoming.remove(path)
+            return
+        }
+        if (cancelRequested) {
+            cancelRequested = false
+            skippedPaths.add(path)
+            incoming.remove(path)
+            onProgress(null)
+            runCatching { Notify.clearSync(engine.context()) }
+            runCatching { sendFrame(JSONObject().put("t", "skip").put("p", path)) }
+            onLog("已取消接收 $path（本次同步不再重试）")
+            return
+        }
 
         var buffer = incoming[path]
         if (buffer == null) {
@@ -381,14 +398,6 @@ class BtSyncEngine(
         val info = TransferInfo(path, buffer.size().toLong(), size, outgoing = false)
         onProgress(info)
         notifyProgress(info)
-        if (cancelRequested) {
-            cancelRequested = false
-            incoming.remove(path)
-            onProgress(null)
-            runCatching { Notify.clearSync(engine.context()) }
-            onLog("已取消接收 $path")
-            return
-        }
 
         if (buffer.size().toLong() >= size) {
             val bytes = buffer.toByteArray()
