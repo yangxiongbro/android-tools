@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -78,7 +79,7 @@ import java.util.Locale
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FileSyncScreen(onBack: () -> Unit) {
+fun FileSyncScreen(onBack: () -> Unit, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
     // 引擎放在进程里（SyncRuntime），离开页面 / 切后台传输不会断
     val engine = remember { SyncRuntime.engine(context) }
@@ -143,20 +144,24 @@ fun FileSyncScreen(onBack: () -> Unit) {
     }
     val formatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("文件同步") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-            )
-        },
-    ) { padding ->
+    Column(modifier = Modifier.fillMaxSize()) {
+        SubPageHeader(
+            title = "文件同步",
+            subtitle = "WiFi 与电脑同步 / 蓝牙互传",
+            onBack = onBack,
+            modifier = Modifier.padding(horizontal = 8.dp),
+            trailing = {
+                IconButton(onClick = onOpenSettings) {
+                    Icon(
+                        imageVector = Icons.Filled.Settings,
+                        contentDescription = "同步设置",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+        )
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()),
+            modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             // ---------- 连接方式 ----------

@@ -57,7 +57,7 @@ fun SettingsScreen(
 
         SettingsGroup(title = "工具设置", icon = Icons.Outlined.Apps) {
             SettingsRow(
-                title = "录屏工具",
+                title = "屏幕录制",
                 subtitle = "录制范围、画质、声音、保存位置",
                 leading = Icons.Outlined.Videocam,
                 leadingTint = AppAccents.Record[1],

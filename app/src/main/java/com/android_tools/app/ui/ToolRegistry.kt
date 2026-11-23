@@ -47,7 +47,7 @@ object ToolRegistry {
     val tools: List<ToolSpec> = listOf(
         ToolSpec(
             id = ToolId.SCREEN_RECORDING,
-            title = "录屏工具",
+            title = "屏幕录制",
             summary = "整屏或单个应用录制",
             icon = Icons.Outlined.Videocam,
             accent = AppAccents.Record,

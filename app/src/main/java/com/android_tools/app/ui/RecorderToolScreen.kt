@@ -121,7 +121,7 @@ fun RecorderToolScreen(
             .padding(horizontal = 18.dp),
     ) {
         SubPageHeader(
-            title = "录屏工具",
+            title = "屏幕录制",
             subtitle = "整屏或单个应用录制",
             onBack = onBack,
             trailing = {

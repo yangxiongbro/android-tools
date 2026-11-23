@@ -110,6 +110,7 @@ enum class Route {
     FILE_SYNC,
     FILE_SYNC_SETTINGS,
     LOCAL_CHAT,
+    LOCAL_CHAT_SETTINGS,
 }
 
 @Composable
@@ -324,11 +325,19 @@ fun RecorderApp() {
                     onBack = pop,
                 )
 
-                Route.FILE_SYNC -> FileSyncScreen(onBack = pop)
+                Route.FILE_SYNC -> FileSyncScreen(
+                    onBack = pop,
+                    onOpenSettings = { push(Route.FILE_SYNC_SETTINGS) },
+                )
 
                 Route.FILE_SYNC_SETTINGS -> FileSyncSettingsScreen(onBack = pop)
 
-                Route.LOCAL_CHAT -> LocalChatScreen(onBack = pop)
+                Route.LOCAL_CHAT -> LocalChatScreen(
+                    onBack = pop,
+                    onOpenSettings = { push(Route.LOCAL_CHAT_SETTINGS) },
+                )
+
+                Route.LOCAL_CHAT_SETTINGS -> LocalChatSettingsScreen(onBack = pop)
 
                 null -> when (tab) {
                     AppTab.TOOLS -> ToolHubScreen(

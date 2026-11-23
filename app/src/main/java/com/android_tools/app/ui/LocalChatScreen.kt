@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -57,6 +58,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.android_tools.app.ui.SubPageHeader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -71,9 +73,10 @@ import java.util.Locale
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LocalChatScreen(onBack: () -> Unit) {
+fun LocalChatScreen(onBack: () -> Unit, onOpenSettings: () -> Unit) {
     val context = LocalContext.current
-    val engine = remember { ChatEngine(context) }
+    // 引擎放在进程里：进设置页 / 关掉对话页时监听不会停
+    val engine = remember { ChatRuntime.engine(context) }
     val state by engine.state.collectAsStateWithLifecycle()
     var tab by remember { mutableIntStateOf(0) }
     var showAdd by remember { mutableStateOf(false) }
@@ -85,10 +88,8 @@ fun LocalChatScreen(onBack: () -> Unit) {
 
     LaunchedEffect(openFriendId) { engine.openFriend(openFriendId) }
 
-    DisposableEffect(Unit) {
-        engine.startServer()
-        onDispose { engine.shutdown() }
-    }
+    // 只保证服务已启动；离开页面（比如进设置）时不关闭，否则会漏收消息
+    LaunchedEffect(Unit) { engine.startServer() }
 
     val formatter = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
 
@@ -105,16 +106,18 @@ fun LocalChatScreen(onBack: () -> Unit) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("本地聊天") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showAdd = true }) {
-                        Icon(Icons.Filled.Add, contentDescription = "添加好友")
+            SubPageHeader(
+                title = "本地聊天",
+                subtitle = "局域网内点对点聊天，消息端到端加密",
+                onBack = onBack,
+                modifier = Modifier.padding(horizontal = 8.dp),
+                trailing = {
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(
+                            imageVector = Icons.Filled.Settings,
+                            contentDescription = "聊天设置",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 },
             )
