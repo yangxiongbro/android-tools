@@ -79,6 +79,9 @@ class BtSyncEngine(
         requested.clear()
         incoming.clear()
         incomingMeta.clear()
+        // 重新开始同步：之前取消过的文件重新允许传输
+        skippedPaths.clear()
+        cancelRequested = false
 
         SyncKeepAliveService.start(engine.context())
         baseline = engine.listSyncItems().associate { item ->
@@ -90,45 +93,54 @@ class BtSyncEngine(
         onLog("正在连接 $deviceName…")
 
         current.launch {
-            var connected: BluetoothSocket? = null
-            try {
-                runCatching { adapter?.cancelDiscovery() }
-                connected = connect(device)
-                socket = connected
-                output = DataOutputStream(connected.outputStream)
-                onLog("已连接 $deviceName")
-                sendFrame(JSONObject().put("t", "hello").put("name", android.os.Build.MODEL ?: "安卓设备"))
-                refreshManifest(force = true)
+            var attempt = 0
+            // 连不上就一直重试：常见情况是手机先开同步、电脑后开，这时必须能自己重连上去
+            while (current.isActive) {
+                var connected: BluetoothSocket? = null
+                try {
+                    runCatching { adapter?.cancelDiscovery() }
+                    connected = connect(device)
+                    socket = connected
+                    output = DataOutputStream(connected.outputStream)
+                    attempt = 0
+                    onLog("已连接 $deviceName")
+                    sendFrame(JSONObject().put("t", "hello").put("name", android.os.Build.MODEL ?: "安卓设备"))
+                    refreshManifest(force = true)
 
-                // 收帧循环（阻塞读放在 IO 线程）
-                val input = DataInputStream(connected.inputStream)
-                while (current.isActive) {
-                    val headerLength = input.readUnsignedShort()
-                    if (headerLength <= 0 || headerLength > 64 * 1024) break
-                    val headerBytes = ByteArray(headerLength)
-                    input.readFully(headerBytes)
-                    val header = JSONObject(String(headerBytes, Charsets.UTF_8))
-                    val payloadSize = header.optLong("z", 0L)
-                    val payload = if (payloadSize > 0) {
-                        ByteArray(payloadSize.toInt()).also { input.readFully(it) }
-                    } else {
-                        ByteArray(0)
+                    // 收帧循环（阻塞读放在 IO 线程）
+                    val input = DataInputStream(connected.inputStream)
+                    while (current.isActive) {
+                        val headerLength = input.readUnsignedShort()
+                        if (headerLength <= 0 || headerLength > 64 * 1024) break
+                        val headerBytes = ByteArray(headerLength)
+                        input.readFully(headerBytes)
+                        val header = JSONObject(String(headerBytes, Charsets.UTF_8))
+                        val payloadSize = header.optLong("z", 0L)
+                        val payload = if (payloadSize > 0) {
+                            ByteArray(payloadSize.toInt()).also { input.readFully(it) }
+                        } else {
+                            ByteArray(0)
+                        }
+                        handleFrame(header, payload)
                     }
-                    handleFrame(header, payload)
+                    onLog("蓝牙连接已断开")
+                } catch (error: Exception) {
+                    onLog("蓝牙同步中断：${error.message ?: error.javaClass.simpleName}")
+                } finally {
+                    runCatching { connected?.close() }
+                    socket = null
+                    output = null
                 }
-                onLog("蓝牙连接已断开")
-            } catch (error: Exception) {
-                onLog("蓝牙同步中断：${error.message ?: error.javaClass.simpleName}")
-            } finally {
-                runCatching { connected?.close() }
-                socket = null
-                output = null
-                if (scope === current) {
-                    scope = null
-                    runCatching { current.cancel() }
-                    runCatching { SyncKeepAliveService.stop(engine.context()) }
-                    onState(false, deviceName, sentCount, receivedCount)
-                }
+                if (!current.isActive) break
+                attempt += 1
+                onLog("3 秒后重连 $deviceName（第 $attempt 次）")
+                delay(3000)
+            }
+            if (scope === current) {
+                scope = null
+                runCatching { current.cancel() }
+                runCatching { SyncKeepAliveService.stop(engine.context()) }
+                onState(false, deviceName, sentCount, receivedCount)
             }
         }
 
@@ -343,6 +355,13 @@ class BtSyncEngine(
             sendFrame(JSONObject().put("t", "file").put("p", path).put("n", 0).put("o", 0).put("m", mtime))
         }
         while (offset < bytes.size) {
+            if (path in skippedPaths) {
+                // 对方取消了这个文件：停发并清进度，避免它那边还挂着进度条
+                reportProgress(null)
+                runCatching { Notify.clearSync(engine.context()) }
+                onLog("对方取消了 $path，已停止发送")
+                return
+            }
             val length = minOf(CHUNK, bytes.size - offset)
             val chunk = bytes.copyOfRange(offset, offset + length)
             sendFrame(
