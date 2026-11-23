@@ -56,6 +56,10 @@ class BtSyncEngine(
     private val requested = HashMap<String, Long>()
     /** 正在接收：path → 字节流 */
     private val incoming = HashMap<String, ByteArrayOutputStream>()
+    /** 蓝牙自己正在传输什么（WiFi 引擎里没有这个状态，不能用 engine.state.transfer） */
+    @Volatile
+    private var currentTransfer: TransferInfo? = null
+
     /** 对方取消过的文件：本次不再请求 */
     private val skippedPaths = HashSet<String>()
     private val incomingMeta = HashMap<String, Pair<Long, Long>>()
@@ -146,7 +150,7 @@ class BtSyncEngine(
         socket = null
         output = null
         runCatching { current.cancel() }
-        onProgress(null)
+        reportProgress(null)
         onState(false, deviceName, sentCount, receivedCount)
         onLog("蓝牙同步已停止")
     }
@@ -154,9 +158,9 @@ class BtSyncEngine(
     /** 连接：标准 SPP → 通道 1 → 不加密 SPP，依次重试 */
     /** 取消正在进行的蓝牙传输（不断开连接） */
     fun cancelTransfer() {
-        val info = engine.state.value.transfer
+        val info = currentTransfer
         cancelRequested = true
-        onProgress(null)
+        reportProgress(null)
         runCatching { Notify.clearSync(engine.context()) }
         if (info == null) {
             cancelRequested = false
@@ -168,6 +172,12 @@ class BtSyncEngine(
         // 不管收发都通知对方：接收端要让发送端停，发送端要让接收端清掉半截缓冲
         runCatching { sendFrame(JSONObject().put("t", "skip").put("p", info.path)) }
         onLog("已取消传输：${info.path}（本次同步不再重试）")
+    }
+
+    /** 统一出口：记下当前传输，再交给外面（通知栏 / 界面） */
+    private fun reportProgress(info: TransferInfo?) {
+        currentTransfer = info
+        onProgress(info)
     }
 
     /** 蓝牙传输也把进度放到通知栏 */
@@ -285,7 +295,7 @@ class BtSyncEngine(
                 if (path.isNotEmpty()) {
                     skippedPaths.add(path)
                     incoming.remove(path)
-                    onProgress(null)
+                    reportProgress(null)
                     runCatching { Notify.clearSync(engine.context()) }
                     onLog("对方取消了 $path，本次同步不再重试")
                 }
@@ -346,18 +356,18 @@ class BtSyncEngine(
             )
             offset += length
             val info = TransferInfo(path, offset.toLong(), bytes.size.toLong(), outgoing = true)
-            onProgress(info)
+            reportProgress(info)
             notifyProgress(info)
             if (cancelRequested) {
                 cancelRequested = false
-                onProgress(null)
+                reportProgress(null)
                 runCatching { Notify.clearSync(engine.context()) }
                 onLog("已取消发送 $path")
                 return
             }
         }
         sentCount += 1
-        onProgress(null)
+        reportProgress(null)
         runCatching { Notify.clearSync(engine.context()) }
         onLog("已发送 $path（${bytes.size / 1024} KB）")
         onState(true, deviceName, sentCount, receivedCount)
@@ -378,7 +388,7 @@ class BtSyncEngine(
             cancelRequested = false
             skippedPaths.add(path)
             incoming.remove(path)
-            onProgress(null)
+            reportProgress(null)
             runCatching { Notify.clearSync(engine.context()) }
             runCatching { sendFrame(JSONObject().put("t", "skip").put("p", path)) }
             onLog("已取消接收 $path（本次同步不再重试）")
@@ -396,7 +406,7 @@ class BtSyncEngine(
         }
         buffer.write(payload)
         val info = TransferInfo(path, buffer.size().toLong(), size, outgoing = false)
-        onProgress(info)
+        reportProgress(info)
         notifyProgress(info)
 
         if (buffer.size().toLong() >= size) {
@@ -411,7 +421,7 @@ class BtSyncEngine(
                 meta?.second?.takeIf { it > 0 }?.let { receivedStamps[path] = it to disk }
                 if (localItem != null) baseline[path] = "${localItem.size}:${disk}"
                 receivedCount += 1
-                onProgress(null)
+                reportProgress(null)
                 runCatching { Notify.clearSync(engine.context()) }
                 // 日志里带上落盘路径，出问题时一眼能看出存到哪了
                 onLog("收到 $path（${bytes.size / 1024} KB）→ ${engine.describeSyncTarget(path)}")

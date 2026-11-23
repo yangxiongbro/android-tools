@@ -398,65 +398,6 @@ fun FileSyncScreen(onBack: () -> Unit, onOpenSettings: () -> Unit) {
     }
 }
 
-/**
- * 用系统文件管理器打开同步目录。
- *
- * - 用 SAF 选过目录：转成 document uri 交给文件管理器（直接进这个文件夹）；
- * - 默认目录：用 ExternalStorageProvider 的 document uri 打开；
- * - 都打不开时退化成让用户重新选一次目录。
- */
-private fun openSyncFolder(context: Context, folderUri: String, engine: SyncEngine) {
-    val mime = DocumentsContract.Document.MIME_TYPE_DIR
-    val candidates = ArrayList<Uri>()
-
-    if (folderUri.isNotEmpty()) {
-        // tree uri 交给文件管理器只会停在上级目录；转成 document uri 才能直接打开这个文件夹
-        val treeUri = Uri.parse(folderUri)
-        val docUri = runCatching {
-            val docId = DocumentsContract.getTreeDocumentId(treeUri)
-            DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
-        }.getOrNull()
-        if (docUri != null) candidates += docUri
-        candidates += treeUri
-    } else {
-        // 用真实的默认目录去拼 document id：有的机器外部存储不在 primary
-        // （比如应用数据落在 SD 卡），写死 primary 会打开另一个空目录。
-        val dir = engine.defaultFolder().absolutePath.replace('\\', '/')
-        val storageRoot = android.os.Environment.getExternalStorageDirectory().absolutePath.replace('\\', '/')
-        val docId = when {
-            dir.startsWith("$storageRoot/") -> "primary:" + dir.removePrefix("$storageRoot/")
-            dir.startsWith("/storage/") -> {
-                val rest = dir.removePrefix("/storage/")
-                val volume = rest.substringBefore('/')
-                val tail = rest.substringAfter('/', "")
-                "$volume:$tail"
-            }
-            else -> "primary:Android/data/${context.packageName}/files/sync"
-        }
-        candidates += Uri.parse(
-            "content://com.android.externalstorage.documents/document/${Uri.encode(docId)}"
-        )
-    }
-
-    for (uri in candidates) {
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mime)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        val launched = runCatching { context.startActivity(intent) }.isSuccess
-        if (launched) return
-    }
-
-    // 兜底：让用户用系统的目录选择器挑一次（挑完就变成 SAF 目录）
-    android.util.Log.w("FileSync", "没有可用的文件管理器，改用目录选择器")
-    val picker = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    runCatching { context.startActivity(picker) }
-        .onFailure { android.util.Log.w("FileSync", "打开同步目录失败: ${it.message}", it) }
-}
-
 @Composable
 private fun deviceNameOf(device: BluetoothDevice): String {
     val name = runCatching { device.name }.getOrNull()

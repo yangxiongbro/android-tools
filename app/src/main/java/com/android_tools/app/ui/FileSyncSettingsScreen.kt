@@ -108,7 +108,7 @@ fun FileSyncSettingsScreen(onBack: () -> Unit) {
                             Text("更换同步文件夹")
                         }
                         OutlinedButton(
-                            onClick = { openSyncFolderForSettings(context, engine) },
+                            onClick = { openSyncFolder(context, engine.activeFolderUri(), engine) },
                             modifier = Modifier.weight(1f),
                         ) {
                             Icon(Icons.Filled.Folder, contentDescription = null)
@@ -155,43 +155,5 @@ fun FileSyncSettingsScreen(onBack: () -> Unit) {
             }
             Spacer(Modifier.height(24.dp))
         }
-    }
-}
-
-/** 设置页里也要能打开同步目录：复用工具页那套解析逻辑 */
-private fun openSyncFolderForSettings(context: android.content.Context, engine: SyncEngine) {
-    val folderUri = engine.activeFolderUri()
-    val mime = android.provider.DocumentsContract.Document.MIME_TYPE_DIR
-    val candidates = ArrayList<Uri>()
-    if (folderUri.isNotEmpty()) {
-        val treeUri = Uri.parse(folderUri)
-        val docUri = runCatching {
-            val docId = android.provider.DocumentsContract.getTreeDocumentId(treeUri)
-            android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
-        }.getOrNull()
-        if (docUri != null) candidates += docUri
-        candidates += treeUri
-    } else {
-        val dir = engine.defaultFolder().absolutePath.replace('\\', '/')
-        val storageRoot = android.os.Environment.getExternalStorageDirectory().absolutePath.replace('\\', '/')
-        val docId = when {
-            dir.startsWith("$storageRoot/") -> "primary:" + dir.removePrefix("$storageRoot/")
-            dir.startsWith("/storage/") -> {
-                val rest = dir.removePrefix("/storage/")
-                val volume = rest.substringBefore('/')
-                val tail = rest.substringAfter('/', "")
-                "$volume:$tail"
-            }
-            else -> "primary:Android/data/${context.packageName}/files/sync"
-        }
-        candidates += Uri.parse("content://com.android.externalstorage.documents/document/${Uri.encode(docId)}")
-    }
-    for (uri in candidates) {
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mime)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        if (runCatching { context.startActivity(intent) }.isSuccess) return
     }
 }
