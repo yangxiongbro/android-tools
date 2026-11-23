@@ -56,6 +56,8 @@ class BtSyncEngine(
     private val requested = HashMap<String, Long>()
     /** 正在接收：path → 字节流 */
     private val incoming = HashMap<String, ByteArrayOutputStream>()
+    /** 对方取消过的文件：本次不再请求 */
+    private val skippedPaths = HashSet<String>()
     private val incomingMeta = HashMap<String, Pair<Long, Long>>()
     /** 刚收到的文件：path → (发送方 mtime, 落盘 mtime)。SAF 目录改不了 mtime，上报时用它顶替 */
     private val receivedStamps = HashMap<String, Pair<Long, Long>>()
@@ -152,12 +154,21 @@ class BtSyncEngine(
     /** 连接：标准 SPP → 通道 1 → 不加密 SPP，依次重试 */
     /** 取消正在进行的蓝牙传输（不断开连接） */
     fun cancelTransfer() {
-        val active = cancelRequested || runCatching { engine.state.value.transfer != null }.getOrDefault(false)
+        val info = engine.state.value.transfer
         cancelRequested = true
         onProgress(null)
         runCatching { Notify.clearSync(engine.context()) }
-        onLog(if (active) "已取消当前传输" else "当前没有正在传输的文件")
-        if (!active) cancelRequested = false
+        if (info == null) {
+            cancelRequested = false
+            onLog("当前没有正在传输的文件")
+            return
+        }
+        skippedPaths.add(info.path)
+        // 通知电脑端别再发这个文件（它也会跳过，避免反复重传）
+        if (!info.outgoing) {
+            runCatching { sendFrame(JSONObject().put("t", "skip").put("p", info.path)) }
+        }
+        onLog("已取消传输：${info.path}（本次同步不再重试）")
     }
 
     /** 蓝牙传输也把进度放到通知栏 */
@@ -269,6 +280,14 @@ class BtSyncEngine(
             }
             "manifest" -> handleManifest(header.optJSONArray("files") ?: JSONArray())
             "want" -> handleWant(header.optString("p"))
+            "skip" -> {
+                // 电脑端取消了这个文件：本次同步不再请求
+                val path = header.optString("p")
+                if (path.isNotEmpty()) {
+                    skippedPaths.add(path)
+                    onLog("电脑端取消了 $path，本次同步不再请求")
+                }
+            }
             "file" -> handleFile(header, payload)
         }
     }
@@ -283,6 +302,7 @@ class BtSyncEngine(
             val mtime = entry.optLong("m", 0)
             if (path.isEmpty()) continue
             if (incoming.containsKey(path)) continue
+            if (path in skippedPaths) continue
             val mine = local[path]
             if (mine != null) {
                 val mineTime = mine.document.lastModified()

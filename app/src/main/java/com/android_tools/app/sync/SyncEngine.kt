@@ -262,11 +262,16 @@ class SyncEngine(context: Context) {
                 file.path,
                 { sent, total -> setTransfer(TransferInfo(file.path, sent, total, outgoing = false)) },
                 { cancelRequested },
+                {
+                    cancelledPaths.add(file.path)
+                    log("电脑端取消了 ${file.path}，本次同步不再重试")
+                },
             )
             if (bytes == null) {
+                // 失败 / 被取消 / 电脑端拒绝：都要把传输状态清掉，否则界面会停在进度条上
+                setTransfer(null)
                 if (cancelRequested) {
                     cancelRequested = false
-                    setTransfer(null)
                     break
                 }
                 continue

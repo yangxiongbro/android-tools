@@ -96,11 +96,16 @@ class SyncClient(baseAddress: String) {
         path: String,
         onProgress: ((Long, Long) -> Unit)? = null,
         isCancelled: () -> Boolean = { false },
+        onPeerCancelled: () -> Unit = {},
     ): ByteArray? {
         val encoded = URLEncoder.encode(path, "UTF-8")
         val connection = open("/sync/download?path=$encoded", "GET") ?: return null
         return try {
-            if (connection.responseCode !in 200..299) {
+            if (connection.responseCode == 409) {
+                // 电脑端取消了该文件，本次同步不再重试
+                onPeerCancelled()
+                null
+            } else if (connection.responseCode !in 200..299) {
                 null
             } else {
                 val total = connection.contentLengthLong.coerceAtLeast(0L)
