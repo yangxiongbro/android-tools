@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Chat
 import androidx.compose.material.icons.outlined.FolderShared
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Storage
@@ -37,6 +38,7 @@ import com.android_tools.app.BuildConfig
 fun SettingsScreen(
     onOpenRecorderSettings: () -> Unit,
     onOpenFileSync: () -> Unit,
+    onOpenLocalChatSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val version = BuildConfig.VERSION_NAME.substringBefore("-")
@@ -70,6 +72,14 @@ fun SettingsScreen(
                 leading = Icons.Outlined.FolderShared,
                 leadingTint = AppAccents.Sync[1],
                 onClick = onOpenFileSync,
+            )
+            RowDivider()
+            SettingsRow(
+                title = "本地聊天",
+                subtitle = "昵称、头像与监听端口",
+                leading = Icons.Outlined.Chat,
+                leadingTint = AppAccents.Chat[1],
+                onClick = onOpenLocalChatSettings,
             )
         }
 

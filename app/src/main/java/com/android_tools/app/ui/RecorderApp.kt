@@ -354,6 +354,7 @@ fun RecorderApp() {
                     AppTab.SETTINGS -> SettingsScreen(
                         onOpenRecorderSettings = { push(Route.RECORDER_SETTINGS) },
                         onOpenFileSync = { push(Route.FILE_SYNC_SETTINGS) },
+                        onOpenLocalChatSettings = { push(Route.LOCAL_CHAT_SETTINGS) },
                     )
                 }
             }
