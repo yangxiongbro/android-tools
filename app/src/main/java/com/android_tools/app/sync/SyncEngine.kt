@@ -253,6 +253,16 @@ class SyncEngine(context: Context) {
 
     /** 远端 → 手机 */
     private fun pullChanged(syncClient: SyncClient, manifest: RemoteManifest) {
+        try {
+            pullFiles(syncClient, manifest)
+        } finally {
+            // 不管成功、取消、还是连接断了，都不能让界面停在进度条上
+            setTransfer(null)
+            cancelRequested = false
+        }
+    }
+
+    private fun pullFiles(syncClient: SyncClient, manifest: RemoteManifest) {
         for (file in manifest.files) {
             val known = remoteSnapshot[file.path]
             if (known != null && known.size == file.size && known.mtime == file.mtime) continue
@@ -288,6 +298,15 @@ class SyncEngine(context: Context) {
 
     /** 手机 → 远端 */
     private fun pushLocal(syncClient: SyncClient, manifest: RemoteManifest) {
+        try {
+            pushFiles(syncClient, manifest)
+        } finally {
+            setTransfer(null)
+            cancelRequested = false
+        }
+    }
+
+    private fun pushFiles(syncClient: SyncClient, manifest: RemoteManifest) {
         val remotePaths = manifest.files.map { it.path }.toHashSet()
         collectLocal().forEach { item ->
             val stamp = "${item.size}:${item.document.lastModified()}"

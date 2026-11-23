@@ -174,7 +174,8 @@ class SyncClient(baseAddress: String) {
             val connection = URL("$base$path").openConnection() as HttpURLConnection
             connection.requestMethod = method
             connection.connectTimeout = TimeUnit.SECONDS.toMillis(6).toInt()
-            connection.readTimeout = TimeUnit.SECONDS.toMillis(20).toInt()
+            // 传输中每隔一小段就有数据；10 秒没动静说明连接已经断了
+            connection.readTimeout = TimeUnit.SECONDS.toMillis(10).toInt()
             connection.setRequestProperty("Accept", "application/json")
             connection
         } catch (error: Exception) {
