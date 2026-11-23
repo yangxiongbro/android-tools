@@ -62,6 +62,9 @@ class BtSyncEngine(
 
     /** 对方取消过的文件：本次不再请求 */
     private val skippedPaths = HashSet<String>()
+    /** 点取消后置位，发送 / 接收循环里检查 */
+    @Volatile
+    private var cancelRequested = false
     private val incomingMeta = HashMap<String, Pair<Long, Long>>()
     /** 刚收到的文件：path → (发送方 mtime, 落盘 mtime)。SAF 目录改不了 mtime，上报时用它顶替 */
     private val receivedStamps = HashMap<String, Pair<Long, Long>>()
@@ -109,19 +112,33 @@ class BtSyncEngine(
 
                     // 收帧循环（阻塞读放在 IO 线程）
                     val input = DataInputStream(connected.inputStream)
-                    while (current.isActive) {
-                        val headerLength = input.readUnsignedShort()
-                        if (headerLength <= 0 || headerLength > 64 * 1024) break
-                        val headerBytes = ByteArray(headerLength)
-                        input.readFully(headerBytes)
-                        val header = JSONObject(String(headerBytes, Charsets.UTF_8))
-                        val payloadSize = header.optLong("z", 0L)
-                        val payload = if (payloadSize > 0) {
-                            ByteArray(payloadSize.toInt()).also { input.readFully(it) }
-                        } else {
-                            ByteArray(0)
+                    // 有的设备「连上了」但其实对面没在监听：8 秒内收不到任何帧就当没连上，重连
+                    val sawFrame = java.util.concurrent.atomic.AtomicBoolean(false)
+                    val watchdog = current.launch {
+                        delay(8000)
+                        if (!sawFrame.get()) {
+                            onLog("对方没有握手响应，重新连接…")
+                            runCatching { connected.close() }
                         }
-                        handleFrame(header, payload)
+                    }
+                    try {
+                        while (current.isActive) {
+                            val headerLength = input.readUnsignedShort()
+                            if (headerLength <= 0 || headerLength > 64 * 1024) break
+                            val headerBytes = ByteArray(headerLength)
+                            input.readFully(headerBytes)
+                            val header = JSONObject(String(headerBytes, Charsets.UTF_8))
+                            val payloadSize = header.optLong("z", 0L)
+                            val payload = if (payloadSize > 0) {
+                                ByteArray(payloadSize.toInt()).also { input.readFully(it) }
+                            } else {
+                                ByteArray(0)
+                            }
+                            sawFrame.set(true)
+                            handleFrame(header, payload)
+                        }
+                    } finally {
+                        watchdog.cancel()
                     }
                     onLog("蓝牙连接已断开")
                 } catch (error: Exception) {
@@ -184,6 +201,7 @@ class BtSyncEngine(
         // 不管收发都通知对方：接收端要让发送端停，发送端要让接收端清掉半截缓冲
         runCatching { sendFrame(JSONObject().put("t", "skip").put("p", info.path)) }
         onLog("已取消传输：${info.path}（本次同步不再重试）")
+        runCatching { refreshManifest(force = true) }
     }
 
     /** 统一出口：记下当前传输，再交给外面（通知栏 / 界面） */
@@ -282,7 +300,15 @@ class BtSyncEngine(
                     .put("m", reportedMtime(item))
             )
         }
-        sendFrame(JSONObject().put("t", "manifest").put("v", version).put("files", files))
+        val cancelled = JSONArray()
+        for (path in skippedPaths) cancelled.put(path)
+        sendFrame(
+            JSONObject()
+                .put("t", "manifest")
+                .put("v", version)
+                .put("files", files)
+                .put("c", cancelled),
+        )
     }
 
     private fun manifestVersion(items: List<SyncEngine.LocalItem>, mtimeOf: (SyncEngine.LocalItem) -> Long): String {
@@ -299,7 +325,21 @@ class BtSyncEngine(
                 sendFrame(JSONObject().put("t", "manifest").put("v", lastVersion).put("files", JSONArray()))
                 refreshManifest(force = true)
             }
-            "manifest" -> handleManifest(header.optJSONArray("files") ?: JSONArray())
+            "manifest" -> {
+                val cancelled = header.optJSONArray("c")
+                if (cancelled != null) {
+                    for (index in 0 until cancelled.length()) {
+                        val path = cancelled.optString(index)
+                        if (path.isEmpty() || path in skippedPaths) continue
+                        skippedPaths.add(path)
+                        incoming.remove(path)
+                        reportProgress(null)
+                        runCatching { Notify.clearSync(engine.context()) }
+                        onLog("对方取消了 $path，本次同步不再重试")
+                    }
+                }
+                handleManifest(header.optJSONArray("files") ?: JSONArray())
+            }
             "want" -> handleWant(header.optString("p"))
             "skip" -> {
                 // 对方取消了这个文件：本次不再请求，同时清掉可能存在的半截接收缓冲
@@ -451,8 +491,6 @@ class BtSyncEngine(
             }
         }
     }
-}    /** 点取消后置位，发送 / 接收循环里检查 */
-    @Volatile
-    private var cancelRequested = false
+}
 
 
