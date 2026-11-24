@@ -62,9 +62,8 @@ class BtSyncEngine(
 
     /** 对方取消过的文件：本次不再请求 */
     private val skippedPaths = HashSet<String>()
-    /** 点取消后置位，发送 / 接收循环里检查 */
-    @Volatile
-    private var cancelRequested = false
+    /** 正在发送的文件（避免同一条 want 并发发送） */
+    private val sending = java.util.Collections.synchronizedSet(HashSet<String>())
     private val incomingMeta = HashMap<String, Pair<Long, Long>>()
     /** 刚收到的文件：path → (发送方 mtime, 落盘 mtime)。SAF 目录改不了 mtime，上报时用它顶替 */
     private val receivedStamps = HashMap<String, Pair<Long, Long>>()
@@ -84,7 +83,6 @@ class BtSyncEngine(
         incomingMeta.clear()
         // 重新开始同步：之前取消过的文件重新允许传输
         skippedPaths.clear()
-        cancelRequested = false
 
         SyncKeepAliveService.start(engine.context())
         baseline = engine.listSyncItems().associate { item ->
@@ -188,19 +186,20 @@ class BtSyncEngine(
     /** 取消正在进行的蓝牙传输（不断开连接） */
     fun cancelTransfer() {
         val info = currentTransfer
-        cancelRequested = true
         reportProgress(null)
         runCatching { Notify.clearSync(engine.context()) }
         if (info == null) {
-            cancelRequested = false
             onLog("当前没有正在传输的文件")
             return
         }
+        val had = info.path in skippedPaths
         skippedPaths.add(info.path)
         incoming.remove(info.path)
-        // 不管收发都通知对方：接收端要让发送端停，发送端要让接收端清掉半截缓冲
-        runCatching { sendFrame(JSONObject().put("t", "skip").put("p", info.path)) }
-        onLog("已取消传输：${info.path}（本次同步不再重试）")
+        if (!had) {
+            // 不管收发都通知对方：接收端要让发送端停，发送端要让接收端清掉半截缓冲
+            runCatching { sendFrame(JSONObject().put("t", "skip").put("p", info.path)) }
+            onLog("已取消传输：${info.path}（本次同步不再重试）")
+        }
         runCatching { refreshManifest(force = true) }
     }
 
@@ -340,16 +339,29 @@ class BtSyncEngine(
                 }
                 handleManifest(header.optJSONArray("files") ?: JSONArray())
             }
-            "want" -> handleWant(header.optString("p"))
+            "want" -> {
+                // 关键：异步发送。同步调用会把收帧循环卡住，发送期间收不到对方的 skip / 清单
+                val path = header.optString("p")
+                if (path.isNotEmpty() && path !in skippedPaths && sending.add(path)) {
+                    scope?.launch {
+                        try {
+                            handleWant(path)
+                        } finally {
+                            sending.remove(path)
+                        }
+                    }
+                }
+            }
             "skip" -> {
                 // 对方取消了这个文件：本次不再请求，同时清掉可能存在的半截接收缓冲
                 val path = header.optString("p")
                 if (path.isNotEmpty()) {
+                    val had = path in skippedPaths
                     skippedPaths.add(path)
                     incoming.remove(path)
                     reportProgress(null)
                     runCatching { Notify.clearSync(engine.context()) }
-                    onLog("对方取消了 $path，本次同步不再重试")
+                    if (!had) onLog("对方取消了 $path，本次同步不再重试")
                 }
             }
             "file" -> handleFile(header, payload)
@@ -417,11 +429,10 @@ class BtSyncEngine(
             val info = TransferInfo(path, offset.toLong(), bytes.size.toLong(), outgoing = true)
             reportProgress(info)
             notifyProgress(info)
-            if (cancelRequested) {
-                cancelRequested = false
+            if (path in skippedPaths) {
+                // 本端或对方取消了这个文件：停发并清进度（cancelTransfer / skip 已记过日志）
                 reportProgress(null)
                 runCatching { Notify.clearSync(engine.context()) }
-                onLog("已取消发送 $path")
                 return
             }
         }
@@ -441,16 +452,6 @@ class BtSyncEngine(
         // 本端取消过、或对方发了 skip：后续分块直接丢掉，不要再"复活"进度
         if (path in skippedPaths) {
             incoming.remove(path)
-            return
-        }
-        if (cancelRequested) {
-            cancelRequested = false
-            skippedPaths.add(path)
-            incoming.remove(path)
-            reportProgress(null)
-            runCatching { Notify.clearSync(engine.context()) }
-            runCatching { sendFrame(JSONObject().put("t", "skip").put("p", path)) }
-            onLog("已取消接收 $path（本次同步不再重试）")
             return
         }
 
