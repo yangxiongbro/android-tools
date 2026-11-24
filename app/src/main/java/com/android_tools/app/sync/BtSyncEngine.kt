@@ -174,11 +174,14 @@ class BtSyncEngine(
             }
         }
 
-        // 定时检查本地清单变化
+        // 定时检查本地清单变化（约每 10 秒强制发一次，避免版本号没变时对方漏掉新增文件）
         current.launch {
+            var ticks = 0
             while (current.isActive) {
                 delay(TICK_MS)
-                runCatching { refreshManifest(force = false) }
+                ticks += 1
+                runCatching { refreshManifest(force = ticks % 7 == 0) }
+                    .onFailure { onLog("清单刷新失败：${it.message ?: it.javaClass.simpleName}") }
             }
         }
     }
