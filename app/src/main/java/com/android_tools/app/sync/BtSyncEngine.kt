@@ -59,6 +59,9 @@ class BtSyncEngine(
     /** 蓝牙自己正在传输什么（WiFi 引擎里没有这个状态，不能用 engine.state.transfer） */
     @Volatile
     private var currentTransfer: TransferInfo? = null
+    /** 最近一次进度更新的时间（用于清理卡住的进度） */
+    @Volatile
+    private var lastProgressAt: Long = 0
 
     /** 对方取消过的文件：本次不再请求 */
     private val skippedPaths = HashSet<String>()
@@ -159,6 +162,18 @@ class BtSyncEngine(
             }
         }
 
+        // 进度看门狗：6 秒没有新进度就清掉，避免界面卡在某个百分比
+        current.launch {
+            while (current.isActive) {
+                delay(2000)
+                if (currentTransfer != null && System.currentTimeMillis() - lastProgressAt > 6000) {
+                    reportProgress(null)
+                    runCatching { Notify.clearSync(engine.context()) }
+                    onLog("传输已中断（长时间没有进度）")
+                }
+            }
+        }
+
         // 定时检查本地清单变化
         current.launch {
             while (current.isActive) {
@@ -206,6 +221,7 @@ class BtSyncEngine(
     /** 统一出口：记下当前传输，再交给外面（通知栏 / 界面） */
     private fun reportProgress(info: TransferInfo?) {
         currentTransfer = info
+        lastProgressAt = System.currentTimeMillis()
         onProgress(info)
     }
 
