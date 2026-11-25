@@ -64,7 +64,8 @@ class BtSyncEngine(
     private var lastProgressAt: Long = 0
 
     /** 对方取消过的文件：本次不再请求 */
-    private val skippedPaths = HashSet<String>()
+    /** 取消登记表（本端 / 对方的取消都记这里，唯一真相来源） */
+    private val cancelled = TransferCancelRegistry()
     /** 刚收 / 发过的文件指纹（path -> 大小:修改时间），防止两端来回重传 */
     private val syncedAt = HashMap<String, String>()
     /** 正在发送的文件（避免同一条 want 并发发送） */
@@ -87,7 +88,7 @@ class BtSyncEngine(
         incoming.clear()
         incomingMeta.clear()
         // 重新开始同步：之前取消过的文件重新允许传输
-        skippedPaths.clear()
+        cancelled.clear()
 
         SyncKeepAliveService.start(engine.context())
         baseline = engine.listSyncItems().associate { item ->
@@ -203,24 +204,30 @@ class BtSyncEngine(
     }
 
     /** 连接：标准 SPP → 通道 1 → 不加密 SPP，依次重试 */
-    /** 取消正在进行的蓝牙传输（不断开连接） */
-    fun cancelTransfer() {
+    /**
+     * 取消当前蓝牙传输（不断开连接）。
+     *
+     * 语义统一在这里：登记 → 丢掉本端半截数据 → 清进度 → 通知对方（skip + 清单 c）。
+     * 返回 true 表示这是一次新的取消（界面据此只提示一次）。
+     */
+    fun cancelTransfer(): Boolean {
         val info = currentTransfer
         reportProgress(null)
         runCatching { Notify.clearSync(engine.context()) }
         if (info == null) {
             onLog("当前没有正在传输的文件")
-            return
+            return false
         }
-        val had = info.path in skippedPaths
-        skippedPaths.add(info.path)
+        val isNew = cancelled.mark(info.path, TransferCancelRegistry.Source.LOCAL)
         incoming.remove(info.path)
-        if (!had) {
+        requested.remove(info.path)
+        if (isNew) {
             // 不管收发都通知对方：接收端要让发送端停，发送端要让接收端清掉半截缓冲
             runCatching { sendFrame(JSONObject().put("t", "skip").put("p", info.path)) }
             onLog("已取消传输：${info.path}（本次同步不再重试）")
         }
         runCatching { refreshManifest(force = true) }
+        return isNew
     }
 
     /** 统一出口：记下当前传输，再交给外面（通知栏 / 界面） */
@@ -320,8 +327,8 @@ class BtSyncEngine(
                     .put("m", reportedMtime(item))
             )
         }
-        val cancelled = JSONArray()
-        for (path in skippedPaths) cancelled.put(path)
+        val cancelledList = JSONArray()
+        for (path in cancelled.localPaths()) cancelledList.put(path)
         val synced = JSONArray()
         for ((path, stamp) in syncedAt) {
             synced.put(JSONArray().put(path).put(stamp))
@@ -331,7 +338,7 @@ class BtSyncEngine(
                 .put("t", "manifest")
                 .put("v", version)
                 .put("files", files)
-                .put("c", cancelled)
+                .put("c", cancelledList)
                 .put("s", synced),
         )
     }
@@ -360,12 +367,14 @@ class BtSyncEngine(
                         if (path.isNotEmpty() && stamp.isNotEmpty()) syncedAt[path] = stamp
                     }
                 }
-                val cancelled = header.optJSONArray("c")
-                if (cancelled != null) {
-                    for (index in 0 until cancelled.length()) {
-                        val path = cancelled.optString(index)
-                        if (path.isEmpty() || path in skippedPaths) continue
-                        skippedPaths.add(path)
+                val remoteCancelled = header.optJSONArray("c")
+                if (remoteCancelled != null) {
+                    val paths = buildList {
+                        for (index in 0 until remoteCancelled.length()) {
+                            remoteCancelled.optString(index).takeIf { it.isNotEmpty() }?.let { add(it) }
+                        }
+                    }
+                    for (path in cancelled.mergeRemote(paths)) {
                         incoming.remove(path)
                         reportProgress(null)
                         runCatching { Notify.clearSync(engine.context()) }
@@ -377,7 +386,7 @@ class BtSyncEngine(
             "want" -> {
                 // 关键：异步发送。同步调用会把收帧循环卡住，发送期间收不到对方的 skip / 清单
                 val path = header.optString("p")
-                if (path.isNotEmpty() && path !in skippedPaths && sending.add(path)) {
+                if (path.isNotEmpty() && !cancelled.has(path) && sending.add(path)) {
                     scope?.launch {
                         try {
                             handleWant(path)
@@ -391,8 +400,8 @@ class BtSyncEngine(
                 // 对方取消了这个文件：本次不再请求，同时清掉可能存在的半截接收缓冲
                 val path = header.optString("p")
                 if (path.isNotEmpty()) {
-                    val had = path in skippedPaths
-                    skippedPaths.add(path)
+                    val had = cancelled.has(path)
+                    cancelled.mark(path, TransferCancelRegistry.Source.PEER)
                     incoming.remove(path)
                     reportProgress(null)
                     runCatching { Notify.clearSync(engine.context()) }
@@ -419,7 +428,7 @@ class BtSyncEngine(
             val mtime = entry.optLong("m", 0)
             if (path.isEmpty()) continue
             if (incoming.containsKey(path)) continue
-            if (path in skippedPaths) continue
+            if (cancelled.has(path)) continue
             val mine = local[path]
             if (mine != null) {
                 val mineTime = mine.document.lastModified()
@@ -456,7 +465,7 @@ class BtSyncEngine(
             sendFrame(JSONObject().put("t", "file").put("p", path).put("n", 0).put("o", 0).put("m", mtime))
         }
         while (offset < bytes.size) {
-            if (path in skippedPaths) {
+            if (cancelled.has(path)) {
                 // 对方取消了这个文件：停发并清进度，避免它那边还挂着进度条
                 reportProgress(null)
                 runCatching { Notify.clearSync(engine.context()) }
@@ -478,7 +487,7 @@ class BtSyncEngine(
             val info = TransferInfo(path, offset.toLong(), bytes.size.toLong(), outgoing = true)
             reportProgress(info)
             notifyProgress(info)
-            if (path in skippedPaths) {
+            if (cancelled.has(path)) {
                 // 本端或对方取消了这个文件：停发并清进度（cancelTransfer / skip 已记过日志）
                 reportProgress(null)
                 runCatching { Notify.clearSync(engine.context()) }
@@ -504,7 +513,7 @@ class BtSyncEngine(
         val mtime = header.optLong("m", 0)
         if (path.isEmpty() || size > MAX_BYTES) return
         // 本端取消过、或对方发了 skip：后续分块直接丢掉，不要再"复活"进度
-        if (path in skippedPaths) {
+        if (cancelled.has(path)) {
             incoming.remove(path)
             return
         }

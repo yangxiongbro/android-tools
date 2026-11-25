@@ -309,6 +309,14 @@ app/src/main/java/com/android_tools/app/
 
 ## 版本
 
+`1.4.18` — 重构取消逻辑：
+
+- 新增 `TransferCancelRegistry`（与桌面端 `btCancel.ts` 语义一致）：取消状态唯一来源，
+  区分本端 / 对方取消，替代原来的裸 `skippedPaths` 集合
+- `cancelTransfer()` 统一为：登记 → 清缓冲与进度 → 发 `skip` + 清单 `c` → 返回是否新取消
+- 收到 `skip` / 清单 `c` 都走 `mergeRemote`，按原因记一次日志（含「对方没有该文件」）
+- versionName `1.4.18` / versionCode 35
+
 `1.4.17` — 请求结果不再石沉大海：
 
 - 电脑端请求的文件不在同步目录时，回一个 `skip (missing)`，并在同步记录里写「对方请求的 xxx 不存在」
