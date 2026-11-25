@@ -65,6 +65,8 @@ class BtSyncEngine(
 
     /** 对方取消过的文件：本次不再请求 */
     /** 取消登记表（本端 / 对方的取消都记这里，唯一真相来源） */
+    /** 上次提示「重复请求」的时间（限频 10 秒） */
+    private var lastDuplicateWantLogAt = 0L
     /** 上次提示「同步文件夹为空/读不到」的时间（限频 30 秒） */
     private var lastEmptyScanLogAt = 0L
     private val cancelled = TransferCancelRegistry()
@@ -336,6 +338,11 @@ class BtSyncEngine(
         }
         val version = manifestVersion(changedItems, ::reportedMtime)
         if (!force && version == lastVersion) return
+        if (version != lastVersion) {
+            // 让用户能看到「手机确实扫到了新文件」，而不是毫无反应
+            val sample = changedItems.firstOrNull()?.path ?: ""
+            onLog("清单已更新：${changedItems.size} 个文件待同步${if (sample.isEmpty()) "" else "（如 $sample）"}")
+        }
         lastVersion = version
         val files = JSONArray()
         for (item in changedItems) {
@@ -409,7 +416,15 @@ class BtSyncEngine(
                     // 电脑还在要一个已经取消的文件：告诉它别再要了
                     runCatching { sendFrame(JSONObject().put("t", "skip").put("p", path)) }
                     onLog("电脑请求已取消的文件：$path（已忽略）")
-                } else if (path.isNotEmpty() && sending.add(path)) {
+                } else if (path.isNotEmpty() && !sending.add(path)) {
+                    // 同一个文件还在发：忽略重复请求，但要留痕，避免看起来"没反应"
+                    val now = System.currentTimeMillis()
+                    if (now - lastDuplicateWantLogAt > 10_000) {
+                        lastDuplicateWantLogAt = now
+                        onLog("电脑重复请求 $path，正在发送中，已忽略")
+                    }
+                } else if (path.isNotEmpty()) {
+                    onLog("开始发送 $path")
                     scope?.launch {
                         try {
                             handleWant(path)
