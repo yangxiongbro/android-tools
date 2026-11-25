@@ -309,6 +309,13 @@ app/src/main/java/com/android_tools/app/
 
 ## 版本
 
+`1.4.19` — 同步范围更明确、请求不再被误判：
+
+- 开启同步时记录基线并写日志「本次同步只传输开始之后变化的文件（当前已有 N 个，作为基线）」，
+  基线内已存在的文件不会互传
+- 电脑请求一个已取消的文件时，回 `skip` 并记日志，不再静默忽略
+- versionName `1.4.19` / versionCode 36
+
 `1.4.18` — 重构取消逻辑：
 
 - 新增 `TransferCancelRegistry`（与桌面端 `btCancel.ts` 语义一致）：取消状态唯一来源，

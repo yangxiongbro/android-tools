@@ -94,6 +94,8 @@ class BtSyncEngine(
         baseline = engine.listSyncItems().associate { item ->
             item.path to "${item.size}:${item.document.lastModified()}"
         }.toMutableMap()
+        // 只有开启同步之后新增 / 改动的文件才会传给电脑
+        onLog("本次同步只传输开始之后变化的文件（当前已有 ${baseline.size} 个，作为基线）")
         val current = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         scope = current
         onState(true, deviceName, 0, 0)
@@ -386,7 +388,11 @@ class BtSyncEngine(
             "want" -> {
                 // 关键：异步发送。同步调用会把收帧循环卡住，发送期间收不到对方的 skip / 清单
                 val path = header.optString("p")
-                if (path.isNotEmpty() && !cancelled.has(path) && sending.add(path)) {
+                if (path.isNotEmpty() && cancelled.has(path)) {
+                    // 电脑还在要一个已经取消的文件：告诉它别再要了
+                    runCatching { sendFrame(JSONObject().put("t", "skip").put("p", path)) }
+                    onLog("电脑请求已取消的文件：$path（已忽略）")
+                } else if (path.isNotEmpty() && sending.add(path)) {
                     scope?.launch {
                         try {
                             handleWant(path)
