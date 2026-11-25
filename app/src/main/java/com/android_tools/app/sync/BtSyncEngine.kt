@@ -65,6 +65,8 @@ class BtSyncEngine(
 
     /** 对方取消过的文件：本次不再请求 */
     private val skippedPaths = HashSet<String>()
+    /** 刚收 / 发过的文件指纹（path -> 大小:修改时间），防止两端来回重传 */
+    private val syncedAt = HashMap<String, String>()
     /** 正在发送的文件（避免同一条 want 并发发送） */
     private val sending = java.util.Collections.synchronizedSet(HashSet<String>())
     private val incomingMeta = HashMap<String, Pair<Long, Long>>()
@@ -320,12 +322,17 @@ class BtSyncEngine(
         }
         val cancelled = JSONArray()
         for (path in skippedPaths) cancelled.put(path)
+        val synced = JSONArray()
+        for ((path, stamp) in syncedAt) {
+            synced.put(JSONArray().put(path).put(stamp))
+        }
         sendFrame(
             JSONObject()
                 .put("t", "manifest")
                 .put("v", version)
                 .put("files", files)
-                .put("c", cancelled),
+                .put("c", cancelled)
+                .put("s", synced),
         )
     }
 
@@ -344,6 +351,15 @@ class BtSyncEngine(
                 refreshManifest(force = true)
             }
             "manifest" -> {
+                val syncedList = header.optJSONArray("s")
+                if (syncedList != null) {
+                    for (index in 0 until syncedList.length()) {
+                        val pair = syncedList.optJSONArray(index) ?: continue
+                        val path = pair.optString(0)
+                        val stamp = pair.optString(1)
+                        if (path.isNotEmpty() && stamp.isNotEmpty()) syncedAt[path] = stamp
+                    }
+                }
                 val cancelled = header.optJSONArray("c")
                 if (cancelled != null) {
                     for (index in 0 until cancelled.length()) {
@@ -402,6 +418,8 @@ class BtSyncEngine(
             if (mine != null) {
                 val mineTime = mine.document.lastModified()
                 if (mine.size == size && kotlin.math.abs(mineTime - mtime) <= 2000) continue
+                // 刚和对方同步过同一份（指纹一致）→ 不再重复请求
+                if (syncedAt[path] == "$size:$mtime") continue
                 if (mineTime > mtime) continue
             }
             val pending = requested[path]
@@ -456,6 +474,11 @@ class BtSyncEngine(
             }
         }
         sentCount += 1
+        syncedAt[path] = "${bytes.size}:$mtime"
+        // 基线用「磁盘上的大小:修改时间」，和 refreshManifest 的比较口径保持一致
+        engine.listSyncItems().firstOrNull { it.path == path }?.let { local ->
+            baseline[path] = "${local.size}:${local.document.lastModified()}"
+        }
         reportProgress(null)
         runCatching { Notify.clearSync(engine.context()) }
         onLog("已发送 $path（${bytes.size / 1024} KB）")
@@ -500,6 +523,7 @@ class BtSyncEngine(
                 meta?.second?.takeIf { it > 0 }?.let { receivedStamps[path] = it to disk }
                 if (localItem != null) baseline[path] = "${localItem.size}:${disk}"
                 receivedCount += 1
+                meta?.second?.takeIf { it > 0 }?.let { syncedAt[path] = "${bytes.size}:$it" }
                 reportProgress(null)
                 runCatching { Notify.clearSync(engine.context()) }
                 // 日志里带上落盘路径，出问题时一眼能看出存到哪了
