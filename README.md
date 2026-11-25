@@ -309,6 +309,14 @@ app/src/main/java/com/android_tools/app/
 
 ## 版本
 
+`1.4.20` — 统一 WiFi / 蓝牙的传输取消：
+
+- 新增 `TransferHub`：两个引擎都上报「当前传输」，取消按钮统一调 `TransferHub.cancel()`，
+  不再按当前 Tab 猜该取消谁
+- 取消登记表统一在 `TransferCancelRegistry`，WiFi 与蓝牙查同一份
+- WiFi 的 `cancelTransfer()` 与蓝牙对齐：登记 → 清进度 → 记一条，返回是否真的取消了传输
+- versionName `1.4.20` / versionCode 37
+
 `1.4.19` — 同步范围更明确、请求不再被误判：
 
 - 开启同步时记录基线并写日志「本次同步只传输开始之后变化的文件（当前已有 N 个，作为基线）」，

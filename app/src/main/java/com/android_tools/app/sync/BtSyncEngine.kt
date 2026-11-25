@@ -236,6 +236,11 @@ class BtSyncEngine(
     private fun reportProgress(info: TransferInfo?) {
         currentTransfer = info
         lastProgressAt = System.currentTimeMillis()
+        if (info != null) {
+            TransferHub.report(TransferHub.Kind.BT, info.path, info.outgoing, info.sent, info.total)
+        } else {
+            TransferHub.finish(TransferHub.Kind.BT)
+        }
         onProgress(info)
     }
 

@@ -60,6 +60,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.android_tools.app.sync.TransferHub
 import com.android_tools.app.sync.BluetoothSync
 import com.android_tools.app.sync.BtSyncEngine
 import com.android_tools.app.notify.Notify
@@ -345,7 +346,7 @@ fun FileSyncScreen(onBack: () -> Unit, onOpenSettings: () -> Unit) {
                                 modifier = Modifier.weight(1f),
                             )
                             OutlinedButton(
-                                onClick = { if (tab == 0) engine.cancelTransfer() else btSync.cancelTransfer() },
+                                onClick = { TransferHub.cancel() },
                             ) {
                                 Text("取消", style = MaterialTheme.typography.labelMedium)
                             }

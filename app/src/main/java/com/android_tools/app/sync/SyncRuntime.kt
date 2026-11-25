@@ -32,7 +32,11 @@ object SyncRuntime {
     val btLogs: StateFlow<List<Pair<Long, String>>> = _btLogs.asStateFlow()
 
     fun engine(context: Context): SyncEngine =
-        syncEngine ?: SyncEngine(context.applicationContext).also { syncEngine = it }
+        syncEngine ?: SyncEngine(context.applicationContext).also { engine ->
+            syncEngine = engine
+            // 两个通道各注册一次取消实现，界面只调 TransferHub.cancel()
+            TransferHub.register(TransferHub.Kind.WIFI) { engine.cancelTransfer() }
+        }
 
     fun bluetooth(context: Context): BluetoothSync =
         bluetoothSync ?: BluetoothSync(context.applicationContext).also { bluetoothSync = it }
@@ -55,11 +59,13 @@ object SyncRuntime {
             onProgress = { info -> _btState.value = _btState.value.copy(transfer = info) },
         )
         btEngine = created
+        TransferHub.register(TransferHub.Kind.BT) { created.cancelTransfer() }
         return created
     }
 
     /** 彻底收尾（目前只有进程退出会用到） */
     fun shutdown() {
+        TransferHub.reset()
         runCatching { syncEngine?.stop() }
         runCatching { btEngine?.stop() }
         runCatching { bluetoothSync?.shutdown() }

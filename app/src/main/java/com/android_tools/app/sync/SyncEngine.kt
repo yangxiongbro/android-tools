@@ -120,23 +120,38 @@ class SyncEngine(context: Context) {
     fun context(): Context = appContext
 
     /** 取消正在进行的传输（当前文件中断，这一轮剩下的文件也不再传） */
-    fun cancelTransfer() {
+    /**
+     * 取消当前 WiFi 传输。语义与蓝牙一致：
+     * 登记 → 停当前传输 → 通知对端（对端下次拉取会收到 409）→ 记一条日志。
+     * 返回 true 表示确实取消了一次传输。
+     */
+    fun cancelTransfer(): Boolean {
         // 先记下正在传的是什么，再清状态（清完 transfer 就没了）
-        val info = _state.value.transfer
+        val info = _state.value.transfer ?: TransferHub.current()?.let {
+            TransferInfo(it.path, it.sent, it.total, it.outgoing)
+        }
         setTransfer(null)
         if (info == null) {
             // 没有正在传输的文件：点一下只是提示，不留下标记去打断下一次
             log("当前没有正在传输的文件")
-            return
+            return false
         }
         cancelRequested = true
         cancelledPaths.add(info.path)
+        TransferHub.markCancelled(info.path, TransferCancelRegistry.Source.LOCAL)
         log("已取消传输：${info.path}（本次同步不再重试）")
+        return true
     }
 
     /** 更新传输状态，同时把进度同步到通知栏 */
     private fun setTransfer(info: TransferInfo?) {
         _state.value = _state.value.copy(transfer = info)
+        // 统一报到中枢：界面上的「取消」针对这里记录的当前传输
+        if (info != null) {
+            TransferHub.report(TransferHub.Kind.WIFI, info.path, info.outgoing, info.sent, info.total)
+        } else {
+            TransferHub.finish(TransferHub.Kind.WIFI)
+        }
         if (info == null || info.total <= 0) {
             Notify.clearSync(appContext)
         } else {
