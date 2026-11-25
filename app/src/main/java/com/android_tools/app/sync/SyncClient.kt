@@ -138,6 +138,7 @@ class SyncClient(baseAddress: String) {
         deviceId: String,
         onProgress: ((Long, Long) -> Unit)? = null,
         isCancelled: () -> Boolean = { false },
+        onPeerCancelled: () -> Unit = {},
     ): Boolean {
         val encodedPath = URLEncoder.encode(path, "UTF-8")
         val encodedDevice = URLEncoder.encode(deviceId, "UTF-8")
@@ -160,8 +161,13 @@ class SyncClient(baseAddress: String) {
                     }
                 }
             }
-            connection.responseCode in 200..299
+            val code = connection.responseCode
+            if (code == 409) onPeerCancelled()
+            code in 200..299
         } catch (error: Exception) {
+            // 电脑端可能直接回 409（已取消）并关闭连接：尽量读一下状态码
+            val code = runCatching { connection.responseCode }.getOrNull()
+            if (code == 409) onPeerCancelled()
             false
         } finally {
             connection.disconnect()

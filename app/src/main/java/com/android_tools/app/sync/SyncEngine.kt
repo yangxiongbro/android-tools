@@ -306,7 +306,14 @@ class SyncEngine(context: Context) {
             setTransfer(null)
             if (writeDocument(file.path, bytes)) {
                 remoteSnapshot[file.path] = file
-                uploadedKeys += "${file.path}:${bytes.size}"
+                // 用「磁盘大小:磁盘时间:路径」登记，和 pushFiles 的去重键一致，
+                // 否则刚收到的文件会被当成「本地变化」再发回电脑（回声）
+                val localItem = collectLocal().firstOrNull { item -> item.path == file.path }
+                if (localItem != null) {
+                    val diskStamp = "${localItem.size}:${localItem.document.lastModified()}"
+                    uploadedKeys += "$diskStamp:${localItem.path}"
+                    baseline = (baseline ?: emptyMap()) + (localItem.path to diskStamp)
+                }
                 _state.value = _state.value.copy(downloaded = _state.value.downloaded + 1)
                 log("收到 ${file.path}（${bytes.size / 1024} KB）")
             }
@@ -345,16 +352,26 @@ class SyncEngine(context: Context) {
             if (key in uploadedKeys) return@forEach
             if (item.path in cancelledPaths) return@forEach
             val remote = manifest.files.firstOrNull { it.path == item.path }
-            if (remote != null && remote.size == item.size && remote.mtime >= item.document.lastModified() - 2000) {
-                uploadedKeys += key
-                return@forEach
+            if (remote != null && remote.size == item.size) {
+                val diff = item.document.lastModified() - remote.mtime
+                // 时间接近 = 同一份；电脑那份更新 = 等它推过来；只有本端明显更新才发送
+                if (kotlin.math.abs(diff) <= 2000 || diff < 0) {
+                    uploadedKeys += key
+                    return@forEach
+                }
             }
             val bytes = readDocument(item) ?: return@forEach
             cancelRequested = false
+            var peerRejected = false
             val uploaded = syncClient.upload(item.path, bytes, deviceId, { sent, total ->
                 setTransfer(TransferInfo(item.path, sent, total, outgoing = true))
-            }, { cancelRequested })
+            }, { cancelRequested }, { peerRejected = true })
             setTransfer(null)
+            if (!uploaded && peerRejected) {
+                cancelledPaths.add(item.path)
+                log("电脑端已取消 ${item.path}，本次同步不再重试")
+                return@forEach
+            }
             if (!uploaded && cancelRequested) {
                 cancelRequested = false
                 cancelledPaths.add(item.path)
