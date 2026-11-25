@@ -396,7 +396,13 @@ class BtSyncEngine(
                     incoming.remove(path)
                     reportProgress(null)
                     runCatching { Notify.clearSync(engine.context()) }
-                    if (!had) onLog("对方取消了 $path，本次同步不再重试")
+                    val reason = header.optString("r")
+                    if (!had) {
+                        onLog(
+                            if (reason == "missing") "对方没有该文件：$path"
+                            else "对方取消了 $path，本次同步不再重试",
+                        )
+                    }
                 }
             }
             "file" -> handleFile(header, payload)
@@ -432,7 +438,13 @@ class BtSyncEngine(
 
     private fun handleWant(path: String) {
         if (path.isEmpty()) return
-        val item = engine.listSyncItems().firstOrNull { it.path == path } ?: return
+        val item = engine.listSyncItems().firstOrNull { it.path == path }
+        if (item == null) {
+            // 让对方别等了：文件已经不在同步目录里
+            runCatching { sendFrame(JSONObject().put("t", "skip").put("p", path).put("r", "missing")) }
+            onLog("对方请求的 $path 不存在，已忽略")
+            return
+        }
         if (item.size > engine.maxFileBytes()) {
             onLog("$path 太大，已跳过")
             return
