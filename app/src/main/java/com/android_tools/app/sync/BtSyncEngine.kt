@@ -65,6 +65,8 @@ class BtSyncEngine(
 
     /** 对方取消过的文件：本次不再请求 */
     /** 取消登记表（本端 / 对方的取消都记这里，唯一真相来源） */
+    /** 上次提示「同步文件夹为空/读不到」的时间（限频 30 秒） */
+    private var lastEmptyScanLogAt = 0L
     private val cancelled = TransferCancelRegistry()
     /** 刚收 / 发过的文件指纹（path -> 大小:修改时间），防止两端来回重传 */
     private val syncedAt = HashMap<String, String>()
@@ -312,6 +314,16 @@ class BtSyncEngine(
 
     private fun refreshManifest(force: Boolean) {
         val items = engine.listSyncItems()
+        if (items.isEmpty()) {
+            val now = System.currentTimeMillis()
+            if (now - lastEmptyScanLogAt > 30_000) {
+                lastEmptyScanLogAt = now
+                onLog(
+                    "蓝牙同步：同步文件夹里没有可同步的文件（${engine.describeSyncTarget("")}）" +
+                        "，若目录里明明有文件，请到设置里重新选择文件夹",
+                )
+            }
+        }
         // SAF 目录写文件后改不了修改时间：刚收到的文件按发送方的 mtime 上报，
         // 否则「电脑发过来 → 手机报了个新时间 → 电脑又去拉回来」会来回同步。
         val changedItems = items.filter { item ->

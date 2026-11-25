@@ -86,6 +86,8 @@ class SyncEngine(context: Context) {
 
     /** 已经处理过的本地文件：path:size，避免重复上传 */
     private val uploadedKeys = HashSet<String>()
+    /** 上次提示「没有可同步文件」的时间（限频 30 秒） */
+    private var lastScanLogAt = 0L
     /** 开启同步那一刻的指纹：只有之后新增 / 改动的文件才上传 */
     private var baseline: Map<String, String>? = null
 
@@ -322,15 +324,28 @@ class SyncEngine(context: Context) {
     }
 
     private fun pushFiles(syncClient: SyncClient, manifest: RemoteManifest) {
-        val remotePaths = manifest.files.map { it.path }.toHashSet()
-        collectLocal().forEach { item ->
+        val items = collectLocal()
+        if (items.isEmpty()) {
+            // 目录读不到（SAF 权限丢失）或确实是空的：限频提示，别让用户以为"没反应"
+            val now = System.currentTimeMillis()
+            if (now - lastScanLogAt > 30_000) {
+                lastScanLogAt = now
+                log(
+                    "同步文件夹里没有可同步的文件：${describeSyncTarget("")}" +
+                        "（若目录里明明有文件，请到设置里重新选择文件夹）",
+                )
+            }
+            return
+        }
+        items.forEach { item ->
             val stamp = "${item.size}:${item.document.lastModified()}"
             if (baseline?.get(item.path) == stamp) return@forEach
-            val key = "${item.path}:${item.size}"
+            // 指纹带上修改时间：同名同大小但内容变过（mtime 变）也要重新传
+            val key = "$stamp:${item.path}"
             if (key in uploadedKeys) return@forEach
             if (item.path in cancelledPaths) return@forEach
             val remote = manifest.files.firstOrNull { it.path == item.path }
-            if (remote != null && remote.size == item.size) {
+            if (remote != null && remote.size == item.size && remote.mtime >= item.document.lastModified() - 2000) {
                 uploadedKeys += key
                 return@forEach
             }
@@ -343,13 +358,13 @@ class SyncEngine(context: Context) {
             if (!uploaded && cancelRequested) {
                 cancelRequested = false
                 cancelledPaths.add(item.path)
-                log("已取消上传：${item.path}（本次同步不再重试）")
+                log("已取消发送：${item.path}（本次同步不再重试）")
                 return@forEach
             }
             if (uploaded) {
                 uploadedKeys += key
                 _state.value = _state.value.copy(uploaded = _state.value.uploaded + 1)
-                log("上传 ${item.path}（${bytes.size / 1024} KB）")
+                log("已发送 ${item.path}（${bytes.size / 1024} KB）")
             }
         }
     }
