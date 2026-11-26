@@ -76,7 +76,8 @@ object CancelStore {
         if (records.isEmpty()) return records
         val kept = records.filter { record ->
             val now = current[record.path]
-            now != null && now == record.fingerprint
+            // 本地没有这个文件（例如是从电脑下载被取消的）→ 保留记录，否则每次轮询都会重试
+            now == null || now == record.fingerprint
         }
         if (kept.size != records.size) save(context, kept)
         return kept

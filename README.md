@@ -309,6 +309,14 @@ app/src/main/java/com/android_tools/app/
 
 ## 版本
 
+`1.4.27` — 修掉「取消记录每 3 秒刷屏」：
+
+- 原因：每轮同步的 `pushFiles` 里有 `cancelledPaths.clear()`，把下载侧刚记下的取消抹掉，
+  于是下一轮又去下载 → 收到 409 → 再记一条日志，形成 3 秒一条的循环
+- 改为只移除「文件已变化被解除」的那几条；下载被取消时也写入 `CancelStore`（用远端指纹）
+- `CancelStore.reconcile` 不再删除「本地没有这个文件」的记录（下载侧的记录本来就对应远端文件）
+- versionName `1.4.27` / versionCode 44
+
 `1.4.26` — 电脑取消上传后不再重传：
 
 - 收到 409（电脑端取消）时不只跳过本次，还会写进 `CancelStore`（用本机的大小:修改时间做指纹），

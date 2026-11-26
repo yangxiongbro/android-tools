@@ -319,6 +319,10 @@ class SyncEngine(context: Context) {
                 { cancelRequested },
                 {
                     cancelledPaths.add(file.path)
+                    // 持久化（用远端指纹）：否则下一轮清单又会把它当成"要下载的文件"，
+                    // 每 3 秒刷一条「电脑端取消了 …」
+                    CancelStore.record(appContext, file.path, "${file.size}:${file.mtime}")
+                    TransferHub.markCancelled(file.path, TransferCancelRegistry.Source.PEER)
                     log("电脑端取消了 ${file.path}，本次同步不再重试")
                 },
             )
@@ -373,10 +377,12 @@ class SyncEngine(context: Context) {
             return
         }
         val currentFingerprints = items.associate { it.path to "${it.size}:${it.document.lastModified()}" }
-        // 文件内容变了：解除它的取消记录，重新参与同步
+        // 文件内容变了：只解除对应那几条，其他（含下载侧刚记的）保持不动
+        val before = CancelStore.load(appContext).map { it.path }.toSet()
         val keptRecords = CancelStore.reconcile(appContext, currentFingerprints)
-        cancelledPaths.clear()
-        for (record in keptRecords) cancelledPaths.add(record.path)
+        val keptPaths = keptRecords.map { it.path }.toSet()
+        for (path in before - keptPaths) cancelledPaths.remove(path)
+        for (path in keptPaths) cancelledPaths.add(path)
         items.forEach { item ->
             val stamp = "${item.size}:${item.document.lastModified()}"
             if (baseline?.get(item.path) == stamp) return@forEach
