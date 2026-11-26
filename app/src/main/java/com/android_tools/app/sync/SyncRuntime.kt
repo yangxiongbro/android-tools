@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.asStateFlow
 /** 蓝牙同步在界面上的状态 */
 data class BtUiState(
     val running: Boolean = false,
+    /** 真正握手成功（收到过对方的帧）才算已连接 */
+    val connected: Boolean = false,
     val device: String = "",
     val sent: Int = 0,
     val received: Int = 0,
@@ -48,9 +50,10 @@ object SyncRuntime {
             onLog = { message ->
                 _btLogs.value = (listOf(System.currentTimeMillis() to message) + _btLogs.value).take(200)
             },
-            onState = { alive, device, sent, received ->
+            onState = { alive, device, sent, received, connected ->
                 _btState.value = _btState.value.copy(
                     running = alive,
+                    connected = connected,
                     device = device,
                     sent = sent,
                     received = received,

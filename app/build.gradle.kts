@@ -13,8 +13,8 @@ android {
         applicationId = "com.android_tools.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 48
-        versionName = "1.4.31"
+        versionCode = 49
+        versionName = "1.4.32"
 
         vectorDrawables { useSupportLibrary = true }
     }

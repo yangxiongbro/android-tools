@@ -134,7 +134,9 @@ fun FileSyncScreen(onBack: () -> Unit, onOpenSettings: () -> Unit) {
     val statusText = when {
         !running -> "未开启"
         tab == 0 && !state.connected -> "连接中…（${state.address.ifEmpty { "未填地址" }}）"
-        tab == 1 -> "已连接 ${btDevice.ifEmpty { "等待手机连接" }}"
+        tab == 1 && btRunning && !btUi.connected ->
+            "正在连接 ${btDevice.ifEmpty { "电脑" }}…（等对方响应握手）"
+        tab == 1 -> "已连接 ${btDevice.ifEmpty { "电脑" }}"
         else -> "已连接 ${state.address}"
     }
 

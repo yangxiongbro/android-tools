@@ -33,7 +33,7 @@ import java.util.UUID
 class BtSyncEngine(
     private val engine: SyncEngine,
     private val onLog: (String) -> Unit,
-    private val onState: (running: Boolean, device: String, sent: Int, received: Int) -> Unit,
+    private val onState: (running: Boolean, device: String, sent: Int, received: Int, connected: Boolean) -> Unit,
     /** 传输进度（null 表示当前没有传输） */
     private val onProgress: (TransferInfo?) -> Unit = {},
 ) {
@@ -67,6 +67,9 @@ class BtSyncEngine(
     /** 取消登记表（本端 / 对方的取消都记这里，唯一真相来源） */
     /** 上次提示「重复请求」的时间（限频 10 秒） */
     private var lastDuplicateWantLogAt = 0L
+    /** 收到过对方的帧（真正握手成功）：只有这时才能显示「已连接」 */
+    @Volatile
+    private var handshaked = false
     /** 上次提示「同步文件夹为空/读不到」的时间（限频 30 秒） */
     private var lastEmptyScanLogAt = 0L
     private val cancelled = TransferCancelRegistry()
@@ -109,7 +112,8 @@ class BtSyncEngine(
         onLog("本次同步只传输开始之后变化的文件（当前已有 ${baseline.size} 个，作为基线）")
         val current = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         scope = current
-        onState(true, deviceName, 0, 0)
+        handshaked = false
+        onState(true, deviceName, 0, 0, false)
         onLog("正在连接 $deviceName…")
 
         current.launch {
@@ -123,7 +127,9 @@ class BtSyncEngine(
                     socket = connected
                     output = DataOutputStream(connected.outputStream)
                     attempt = 0
-                    onLog("已连接 $deviceName")
+                    handshaked = false
+                    // 蓝牙栈可能"连上"了但对面没在监听：先不显示已连接，等对方第一帧
+                    onLog("连接成功，等待 $deviceName 握手…")
                     sendFrame(JSONObject().put("t", "hello").put("name", android.os.Build.MODEL ?: "安卓设备"))
                     refreshManifest(force = true)
 
@@ -152,6 +158,11 @@ class BtSyncEngine(
                                 ByteArray(0)
                             }
                             sawFrame.set(true)
+                            if (!handshaked) {
+                                handshaked = true
+                                onLog("已连接 $deviceName")
+                                onState(true, deviceName, sentCount, receivedCount, handshaked)
+                            }
                             handleFrame(header, payload)
                         }
                     } finally {
@@ -164,6 +175,7 @@ class BtSyncEngine(
                     runCatching { connected?.close() }
                     socket = null
                     output = null
+                    handshaked = false
                 }
                 if (!current.isActive) break
                 attempt += 1
@@ -174,7 +186,7 @@ class BtSyncEngine(
                 scope = null
                 runCatching { current.cancel() }
                 runCatching { SyncKeepAliveService.stop(engine.context()) }
-                onState(false, deviceName, sentCount, receivedCount)
+                onState(false, deviceName, sentCount, receivedCount, false)
             }
         }
 
@@ -212,7 +224,7 @@ class BtSyncEngine(
         output = null
         runCatching { current.cancel() }
         reportProgress(null)
-        onState(false, deviceName, sentCount, receivedCount)
+        onState(false, deviceName, sentCount, receivedCount, false)
         onLog("蓝牙同步已停止")
     }
 
@@ -356,7 +368,7 @@ class BtSyncEngine(
         }
         val version = manifestVersion(changedItems, ::reportedMtime)
         if (!force && version == lastVersion) return
-        if (version != lastVersion) {
+        if (version != lastVersion && handshaked) {
             // 让用户能看到「手机确实扫到了新文件」，而不是毫无反应
             val sample = changedItems.firstOrNull()?.path ?: ""
             onLog("清单已更新：${changedItems.size} 个文件待同步${if (sample.isEmpty()) "" else "（如 $sample）"}")
@@ -559,7 +571,7 @@ class BtSyncEngine(
         reportProgress(null)
         runCatching { Notify.clearSync(engine.context()) }
         onLog("已发送 $path（${bytes.size / 1024} KB）")
-        onState(true, deviceName, sentCount, receivedCount)
+        onState(true, deviceName, sentCount, receivedCount, handshaked)
     }
 
     private fun handleFile(header: JSONObject, payload: ByteArray) {
@@ -605,7 +617,7 @@ class BtSyncEngine(
                 runCatching { Notify.clearSync(engine.context()) }
                 // 日志里带上落盘路径，出问题时一眼能看出存到哪了
                 onLog("收到 $path（${bytes.size / 1024} KB）→ ${engine.describeSyncTarget(path)}")
-                onState(true, deviceName, sentCount, receivedCount)
+                onState(true, deviceName, sentCount, receivedCount, handshaked)
                 runCatching { refreshManifest(force = true) }
             } else {
                 onLog("写入失败：$path")
