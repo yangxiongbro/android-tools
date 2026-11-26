@@ -70,6 +70,7 @@ import com.android_tools.app.sync.TransferInfo
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.ui.draw.clip
 
 /**
  * 文件同步工具：手机与电脑（DevToolbox「文件同步」）通过 WiFi 双向同步，
@@ -173,7 +174,6 @@ fun FileSyncScreen(onBack: () -> Unit, onOpenSettings: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("连接方式", style = MaterialTheme.typography.labelLarge)
                 Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("WiFi / 局域网", "蓝牙").forEachIndexed { index, label ->
                         if (tab == index) {
@@ -186,11 +186,22 @@ fun FileSyncScreen(onBack: () -> Unit, onOpenSettings: () -> Unit) {
             }
 
             // ---------- 同步目录（只读；换目录在设置里） ----------
+            // 点这一行（文字）即可用系统文件管理器打开同步目录
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { openSyncFolder(context, engine.activeFolderUri(), engine) }
+                    .padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Icon(
+                    Icons.Filled.Folder,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
                 Text(
                     "同步目录：" + engine.syncFolderLabel(),
                     style = MaterialTheme.typography.labelSmall,
@@ -198,11 +209,6 @@ fun FileSyncScreen(onBack: () -> Unit, onOpenSettings: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                OutlinedButton(onClick = { openSyncFolder(context, engine.activeFolderUri(), engine) }) {
-                    Icon(Icons.Filled.Folder, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("打开", style = MaterialTheme.typography.labelMedium)
-                }
             }
 
             // ---------- 1. 已配对设备 / 电脑地址 ----------

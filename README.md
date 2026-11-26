@@ -309,6 +309,12 @@ app/src/main/java/com/android_tools/app/
 
 ## 版本
 
+`1.4.33` — 文件同步页精简：
+
+- 去掉「连接方式」文字标签，WiFi / 蓝牙两个按钮直接铺满整行
+- 去掉「打开」按钮：**点「同步目录：…」这一行**即可用系统文件管理器打开同步目录
+- versionName `1.4.33` / versionCode 50
+
 `1.4.32` — 蓝牙「假连接」修复：
 
 - 原因：手机上 `BluetoothSocket.connect()` 返回成功并不代表电脑在监听（Windows 栈会先接受 RFCOMM 连接），
