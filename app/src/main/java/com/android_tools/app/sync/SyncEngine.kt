@@ -319,8 +319,12 @@ class SyncEngine(context: Context) {
             cancelRequested = false
             val bytes = syncClient.download(
                 file.path,
-                { sent, total -> setTransfer(TransferInfo(file.path, sent, total, outgoing = false)) },
-                { cancelRequested },
+                { sent, total ->
+                    if (!cancelRequested && file.path !in cancelledPaths) {
+                        setTransfer(TransferInfo(file.path, sent, total, outgoing = false))
+                    }
+                },
+                { cancelRequested || file.path in cancelledPaths },
                 {
                     cancelledPaths.add(file.path)
                     // 持久化（用远端指纹）：否则下一轮清单又会把它当成"要下载的文件"，
@@ -404,11 +408,20 @@ class SyncEngine(context: Context) {
                 }
             }
             val bytes = readDocument(item) ?: return@forEach
-            cancelRequested = false
+            // 读文件的这几秒里用户可能已经点了取消：这里不能再无脑清标志
+            if (cancelRequested || item.path in cancelledPaths) {
+                cancelRequested = false
+                cancelledPaths.add(item.path)
+                log("已取消发送：${item.path}（本次同步不再重试）")
+                return@forEach
+            }
             var peerRejected = false
             val uploaded = syncClient.upload(item.path, bytes, deviceId, { sent, total ->
-                setTransfer(TransferInfo(item.path, sent, total, outgoing = true))
-            }, { cancelRequested }, { peerRejected = true })
+                // 已取消就别再刷进度了，否则界面会又冒出百分比
+                if (!cancelRequested && item.path !in cancelledPaths) {
+                    setTransfer(TransferInfo(item.path, sent, total, outgoing = true))
+                }
+            }, { cancelRequested || item.path in cancelledPaths }, { peerRejected = true })
             setTransfer(null)
             if (!uploaded && peerRejected) {
                 cancelledPaths.add(item.path)

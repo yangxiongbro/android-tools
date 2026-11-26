@@ -309,6 +309,15 @@ app/src/main/java/com/android_tools/app/
 
 ## 版本
 
+`1.4.29` — 取消立刻生效，不再"跑到 100% 才显示取消"：
+
+- 原因一：`HttpURLConnection` 的 `outputStream` 有本地缓冲，60 MB 文件会被瞬间写进缓冲区，
+  进度按"写入量"算就直接到 100%。改为每 512 KB `flush()` 一次，进度反映**实际发出量**
+- 原因二：上传前会 `cancelRequested = false`，把读文件期间用户点的取消清掉了。
+  改为接着看 `cancelledPaths`（按路径），并在上传/下载进度回调里忽略已取消的文件
+- 取消时一次性停：`isCancelled` 判断 = `cancelRequested || 路径在已取消集合里`
+- versionName `1.4.29` / versionCode 46
+
 `1.4.28` — 修掉「本机取消后又自动传一遍」：
 
 - 原因：取消时把 `baseline` 里没有的文件记成指纹 `"${total}:0"`，下一次 reconcile 认为"文件变了"，

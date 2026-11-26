@@ -150,10 +150,19 @@ class SyncClient(baseAddress: String) {
             connection.outputStream.use { output ->
                 val buffer = 16 * 1024
                 var offset = 0
+                var sinceFlush = 0
                 while (offset < bytes.size) {
                     val length = minOf(buffer, bytes.size - offset)
                     output.write(bytes, offset, length)
                     offset += length
+                    sinceFlush += length
+                    // 每 512 KB 真正刷出去一次：进度才反映"实际发出去多少"，
+                    // 而不是"写进本地缓冲区多少"（否则 60 MB 会瞬间到 100%，
+                    // 取消时也已经显示完成了）
+                    if (sinceFlush >= 512 * 1024) {
+                        sinceFlush = 0
+                        output.flush()
+                    }
                     onProgress?.invoke(offset.toLong(), bytes.size.toLong())
                     if (isCancelled()) {
                         connection.disconnect()
