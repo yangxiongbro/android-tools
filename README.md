@@ -309,6 +309,12 @@ app/src/main/java/com/android_tools/app/
 
 ## 版本
 
+`1.4.26` — 电脑取消上传后不再重传：
+
+- 收到 409（电脑端取消）时不只跳过本次，还会写进 `CancelStore`（用本机的大小:修改时间做指纹），
+  重启 App 也不会自动重传这个版本
+- versionName `1.4.26` / versionCode 43
+
 `1.4.25` — 「已取消」记录跨会话保留（与电脑端一致）：
 
 - 新增 `CancelStore`：取消记录（路径 + 大小:修改时间）持久化到 SharedPreferences

@@ -402,6 +402,9 @@ class SyncEngine(context: Context) {
             setTransfer(null)
             if (!uploaded && peerRejected) {
                 cancelledPaths.add(item.path)
+                // 持久化：重启 App 也不要再自动重传这个版本
+                CancelStore.record(appContext, item.path, stamp)
+                TransferHub.markCancelled(item.path, TransferCancelRegistry.Source.PEER)
                 log("电脑端已取消 ${item.path}，本次同步不再重试")
                 return@forEach
             }
