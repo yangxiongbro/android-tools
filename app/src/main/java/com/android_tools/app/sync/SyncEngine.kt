@@ -391,7 +391,9 @@ class SyncEngine(context: Context) {
         val keptPaths = keptRecords.map { it.path }.toSet()
         for (path in before - keptPaths) cancelledPaths.remove(path)
         for (path in keptPaths) cancelledPaths.add(path)
+        var abortPass = false
         items.forEach { item ->
+            if (abortPass) return@forEach
             val stamp = "${item.size}:${item.document.lastModified()}"
             if (baseline?.get(item.path) == stamp) return@forEach
             // 指纹带上修改时间：同名同大小但内容变过（mtime 变）也要重新传
@@ -429,6 +431,8 @@ class SyncEngine(context: Context) {
                 CancelStore.record(appContext, item.path, stamp)
                 TransferHub.markCancelled(item.path, TransferCancelRegistry.Source.PEER)
                 log("电脑端已取消 ${item.path}，本次同步不再重试")
+                // 电脑端已经取消了：这一轮不要接着传后面的文件，否则界面又会冒出进度条
+                abortPass = true
                 return@forEach
             }
             if (!uploaded && cancelRequested) {
@@ -437,6 +441,7 @@ class SyncEngine(context: Context) {
                 CancelStore.record(appContext, item.path, stamp)
                 TransferHub.markCancelled(item.path, TransferCancelRegistry.Source.LOCAL)
                 log("已取消发送：${item.path}（本次同步不再重试）")
+                abortPass = true
                 return@forEach
             }
             if (uploaded) {
