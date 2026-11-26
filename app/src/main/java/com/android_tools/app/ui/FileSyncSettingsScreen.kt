@@ -58,6 +58,7 @@ fun FileSyncSettingsScreen(onBack: () -> Unit) {
     // 必须是进程里同一个引擎：否则这里改了目录，文件同步页（另一个实例）读到的还是旧状态
     val engine = remember { SyncRuntime.engine(context) }
     var maxMbInput by remember { mutableStateOf(engine.maxFileMb().toString()) }
+    var cancelledCount by remember { mutableStateOf(engine.cancelledCount()) }
     var folderLabel by remember { mutableStateOf(engine.syncFolderLabel()) }
     androidx.compose.runtime.LaunchedEffect(Unit) { folderLabel = engine.syncFolderLabel() }
 
@@ -151,6 +152,32 @@ fun FileSyncSettingsScreen(onBack: () -> Unit) {
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            }
+
+            // 已取消的文件：跨会话保留，内容变化后自动恢复
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("已取消的文件", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "这些文件取消过传输，不会再自动同步；文件内容变化后会自动恢复。共 $cancelledCount 个。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            val count = engine.clearCancelled()
+                            cancelledCount = engine.cancelledCount()
+                            android.widget.Toast.makeText(
+                                context,
+                                if (count > 0) "已恢复 $count 个文件的同步" else "没有需要恢复的文件",
+                                android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                        },
+                        enabled = cancelledCount > 0,
+                    ) {
+                        Text("清空并恢复同步")
+                    }
                 }
             }
             Spacer(Modifier.height(24.dp))

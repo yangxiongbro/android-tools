@@ -125,6 +125,17 @@ class SyncEngine(context: Context) {
         log(if (text.isEmpty()) "已恢复使用应用默认目录" else "同步目录已切换：${syncFolderLabel()}")
     }
 
+    /** 已取消（不再自动同步）的文件数量 */
+    fun cancelledCount(): Int = CancelStore.count(appContext)
+
+    /** 清空已取消记录，恢复这些文件的同步 */
+    fun clearCancelled(): Int {
+        val count = CancelStore.clear(appContext)
+        cancelledPaths.clear()
+        TransferHub.cancelledPaths().clear()
+        return count
+    }
+
     /** 给蓝牙同步用：拿应用上下文起前台服务 */
     fun context(): Context = appContext
 
@@ -148,6 +159,9 @@ class SyncEngine(context: Context) {
         cancelRequested = true
         cancelledPaths.add(info.path)
         TransferHub.markCancelled(info.path, TransferCancelRegistry.Source.LOCAL)
+        // 持久化：重启 App 后也不要自动再传，文件内容变了才恢复
+        val fingerprint = baseline?.get(info.path) ?: "${info.total}:0"
+        CancelStore.record(appContext, info.path, fingerprint)
         log("已取消传输：${info.path}（本次同步不再重试）")
         return true
     }
@@ -219,7 +233,14 @@ class SyncEngine(context: Context) {
             return
         }
         // 开启同步时打基线：此前的文件视为已同步，不再整目录上传
-        baseline = collectLocal().associate { it.path to "${it.size}:${it.document.lastModified()}" }
+        val localItems = collectLocal()
+        baseline = localItems.associate { it.path to "${it.size}:${it.document.lastModified()}" }
+        // 载入「已取消」记录（跨会话）：文件内容没变的不再自动同步
+        val fingerprints = localItems.associate { it.path to "${it.size}:${it.document.lastModified()}" }
+        val kept = CancelStore.reconcile(appContext, fingerprints)
+        cancelledPaths.clear()
+        for (record in kept) cancelledPaths.add(record.path)
+        if (kept.isNotEmpty()) log("有 ${kept.size} 个文件被取消过，本次不再同步（内容变化后会自动恢复）")
         client = SyncClient(address)
         job?.cancel()
         _state.value = _state.value.copy(running = true, lastError = "")
@@ -351,6 +372,11 @@ class SyncEngine(context: Context) {
             }
             return
         }
+        val currentFingerprints = items.associate { it.path to "${it.size}:${it.document.lastModified()}" }
+        // 文件内容变了：解除它的取消记录，重新参与同步
+        val keptRecords = CancelStore.reconcile(appContext, currentFingerprints)
+        cancelledPaths.clear()
+        for (record in keptRecords) cancelledPaths.add(record.path)
         items.forEach { item ->
             val stamp = "${item.size}:${item.document.lastModified()}"
             if (baseline?.get(item.path) == stamp) return@forEach

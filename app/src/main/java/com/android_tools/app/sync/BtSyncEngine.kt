@@ -91,8 +91,15 @@ class BtSyncEngine(
         requested.clear()
         incoming.clear()
         incomingMeta.clear()
-        // 重新开始同步：之前取消过的文件重新允许传输
+        // 载入「已取消」记录（跨会话）：内容没变的不再自动同步
+        val localNow = engine.listSyncItems().associate { it.path to "${it.size}:${it.document.lastModified()}" }
+        val keptRecords = CancelStore.load(engine.context())
+            .filter { record -> localNow[record.path] == record.fingerprint }
         cancelled.clear()
+        for (record in keptRecords) cancelled.mark(record.path, TransferCancelRegistry.Source.LOCAL)
+        if (keptRecords.isNotEmpty()) {
+            onLog("有 ${keptRecords.size} 个文件被取消过，本次不再同步（内容变化后会自动恢复）")
+        }
 
         SyncKeepAliveService.start(engine.context())
         baseline = engine.listSyncItems().associate { item ->
@@ -227,6 +234,9 @@ class BtSyncEngine(
         val isNew = cancelled.mark(info.path, TransferCancelRegistry.Source.LOCAL)
         incoming.remove(info.path)
         requested.remove(info.path)
+        val stamp = engine.listSyncItems().firstOrNull { it.path == info.path }
+            ?.let { "${it.size}:${it.document.lastModified()}" } ?: "${info.total}:0"
+        CancelStore.record(engine.context(), info.path, stamp)
         if (isNew) {
             // 不管收发都通知对方：接收端要让发送端停，发送端要让接收端清掉半截缓冲
             runCatching { sendFrame(JSONObject().put("t", "skip").put("p", info.path)) }
@@ -316,6 +326,14 @@ class BtSyncEngine(
 
     private fun refreshManifest(force: Boolean) {
         val items = engine.listSyncItems()
+        // 文件内容变了：解除它的取消记录，重新参与同步
+        runCatching {
+            val fingerprints = items.associate { it.path to "${it.size}:${it.document.lastModified()}" }
+            val kept = CancelStore.reconcile(engine.context(), fingerprints)
+            for (record in kept) {
+                if (!cancelled.has(record.path)) cancelled.mark(record.path, TransferCancelRegistry.Source.LOCAL)
+            }
+        }
         if (items.isEmpty()) {
             val now = System.currentTimeMillis()
             if (now - lastEmptyScanLogAt > 30_000) {
