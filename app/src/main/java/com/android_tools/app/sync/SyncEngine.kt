@@ -25,8 +25,15 @@ data class TransferInfo(
     val total: Long,
     val outgoing: Boolean,
 ) {
+    /**
+     * 进度百分比。
+     *
+     * 注意**上限是 99**：字节写进 socket 缓冲区不代表对方收到了 ——
+     * 电脑端取消时手机这边往往已经把全部字节写完，如果这里给到 100%，
+     * 界面就会先闪一下"传输完成"再跳回空闲。真正的"完成"以对方响应为准（记一条同步记录）。
+     */
     val percent: Int
-        get() = if (total <= 0) 0 else ((sent * 100) / total).toInt().coerceIn(0, 100)
+        get() = if (total <= 0) 0 else ((sent * 100) / total).toInt().coerceIn(0, 99)
 }
 
 /** 同步界面用到的状态。 */
