@@ -44,6 +44,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.android_tools.app.sync.SyncEngine
 import com.android_tools.app.sync.SyncRuntime
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
 
 /**
  * 设置 →「文件同步」里的同步配置页。
@@ -94,31 +98,41 @@ fun FileSyncSettingsScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("同步目录", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        folderLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { folderPicker.launch(null) }, modifier = Modifier.weight(1f)) {
-                            Icon(Icons.Filled.FolderOpen, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("更换同步文件夹")
-                        }
-                        OutlinedButton(
-                            onClick = { openSyncFolder(context, engine.activeFolderUri(), engine) },
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Icon(Icons.Filled.Folder, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("打开同步文件夹")
-                        }
+                    // 点这一行（目录文字）直接用系统文件管理器打开
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { openSyncFolder(context, engine.activeFolderUri(), engine) }
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.Folder,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            folderLabel,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Button(
+                        onClick = { folderPicker.launch(null) },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Icon(Icons.Filled.FolderOpen, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("更换同步文件夹", style = MaterialTheme.typography.titleSmall)
                     }
                     Text(
-                        "WiFi 与蓝牙同步共用这个目录。",
+                        "WiFi 与蓝牙同步共用这个目录；点上面的目录可以直接打开。",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -129,23 +143,32 @@ fun FileSyncSettingsScreen(onBack: () -> Unit) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("单个文件上限", style = MaterialTheme.typography.titleSmall)
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         OutlinedTextField(
                             value = maxMbInput,
                             onValueChange = { value -> maxMbInput = value.filter { it.isDigit() }.take(4) },
                             singleLine = true,
-                            modifier = Modifier.width(120.dp),
-                            textStyle = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            label = { Text("上限") },
+                            placeholder = { Text("100") },
+                            suffix = { Text("MB", style = MaterialTheme.typography.labelMedium) },
+                            textStyle = MaterialTheme.typography.titleMedium,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            suffix = { Text("MB") },
                         )
-                        Button(onClick = {
-                            val mb = maxMbInput.toIntOrNull() ?: 100
-                            engine.updateMaxFileMb(mb)
-                            maxMbInput = engine.maxFileMb().toString()
-                        }) { Text("保存") }
+                        Button(
+                            onClick = {
+                                val mb = maxMbInput.toIntOrNull() ?: 100
+                                engine.updateMaxFileMb(mb)
+                                maxMbInput = engine.maxFileMb().toString()
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.height(56.dp),
+                        ) {
+                            Text("保存", style = MaterialTheme.typography.titleSmall)
+                        }
                     }
                     Text(
                         "超过上限的文件不会同步（默认 100 MB，可设 1 - 4096）。所有类型的文件都会同步。",
