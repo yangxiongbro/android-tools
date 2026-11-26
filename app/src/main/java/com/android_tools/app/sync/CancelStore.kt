@@ -18,6 +18,8 @@ object CancelStore {
     private const val PREFS = "file-sync"
     private const val KEY = "cancelled"
     private const val LIMIT = 500
+    /** 取消时无法确定指纹时使用的粘性标记 */
+    const val STICKY = "*"
 
     fun load(context: Context): List<Record> {
         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, "") ?: ""
@@ -75,6 +77,8 @@ object CancelStore {
         val records = load(context)
         if (records.isEmpty()) return records
         val kept = records.filter { record ->
+            // '*' 表示粘性取消（取消时拿不到文件指纹），只能手动清空
+            if (record.fingerprint == "*") return@filter true
             val now = current[record.path]
             // 本地没有这个文件（例如是从电脑下载被取消的）→ 保留记录，否则每次轮询都会重试
             now == null || now == record.fingerprint

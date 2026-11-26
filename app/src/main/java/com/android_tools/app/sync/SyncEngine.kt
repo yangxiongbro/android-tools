@@ -159,9 +159,13 @@ class SyncEngine(context: Context) {
         cancelRequested = true
         cancelledPaths.add(info.path)
         TransferHub.markCancelled(info.path, TransferCancelRegistry.Source.LOCAL)
-        // 持久化：重启 App 后也不要自动再传，文件内容变了才恢复
-        val fingerprint = baseline?.get(info.path) ?: "${info.total}:0"
-        CancelStore.record(appContext, info.path, fingerprint)
+        // 持久化：重启 App 后也不要自动再传，文件内容变了才恢复。
+        // 指纹必须来自真实文件；拿不到就用粘性标记，绝不能写 total:0
+        //（否则下一次 reconcile 会认为"文件变了"，把记录解除，于是又自动传一遍）
+        val realStamp = collectLocal().firstOrNull { it.path == info.path }
+            ?.let { "${it.size}:${it.document.lastModified()}" }
+            ?: CancelStore.STICKY
+        CancelStore.record(appContext, info.path, realStamp)
         log("已取消传输：${info.path}（本次同步不再重试）")
         return true
     }
@@ -417,6 +421,8 @@ class SyncEngine(context: Context) {
             if (!uploaded && cancelRequested) {
                 cancelRequested = false
                 cancelledPaths.add(item.path)
+                CancelStore.record(appContext, item.path, stamp)
+                TransferHub.markCancelled(item.path, TransferCancelRegistry.Source.LOCAL)
                 log("已取消发送：${item.path}（本次同步不再重试）")
                 return@forEach
             }

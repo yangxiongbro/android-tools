@@ -235,7 +235,7 @@ class BtSyncEngine(
         incoming.remove(info.path)
         requested.remove(info.path)
         val stamp = engine.listSyncItems().firstOrNull { it.path == info.path }
-            ?.let { "${it.size}:${it.document.lastModified()}" } ?: "${info.total}:0"
+            ?.let { "${it.size}:${it.document.lastModified()}" } ?: CancelStore.STICKY
         CancelStore.record(engine.context(), info.path, stamp)
         if (isNew) {
             // 不管收发都通知对方：接收端要让发送端停，发送端要让接收端清掉半截缓冲
