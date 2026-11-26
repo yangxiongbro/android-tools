@@ -166,6 +166,8 @@ class SyncEngine(context: Context) {
             ?.let { "${it.size}:${it.document.lastModified()}" }
             ?: CancelStore.STICKY
         CancelStore.record(appContext, info.path, realStamp)
+        // 主动把取消列表报给电脑端（等价于蓝牙的 skip 帧），不用等下一次请求被 409 拒
+        runCatching { client?.reportCancelled(listOf(info.path)) }
         log("已取消传输：${info.path}（本次同步不再重试）")
         return true
     }
@@ -246,6 +248,8 @@ class SyncEngine(context: Context) {
         for (record in kept) cancelledPaths.add(record.path)
         if (kept.isNotEmpty()) log("有 ${kept.size} 个文件被取消过，本次不再同步（内容变化后会自动恢复）")
         client = SyncClient(address)
+        // 把本机已有的取消记录同步给电脑端，避免它继续往这儿发
+        runCatching { client?.reportCancelled(kept.map { it.path }) }
         job?.cancel()
         _state.value = _state.value.copy(running = true, lastError = "")
         log("开始同步：$address")
@@ -316,6 +320,15 @@ class SyncEngine(context: Context) {
             val known = remoteSnapshot[file.path]
             if (known != null && known.size == file.size && known.mtime == file.mtime) continue
             if (file.path in cancelledPaths) continue
+            if (file.path in manifest.cancelled) {
+                // 电脑端清单里已经标了「已取消」：直接跳过，不用再发一次请求等 409
+                if (file.path !in cancelledPaths) {
+                    cancelledPaths.add(file.path)
+                    CancelStore.record(appContext, file.path, "${file.size}:${file.mtime}")
+                    log("电脑端已取消 ${file.path}，本次同步不再重试")
+                }
+                continue
+            }
             cancelRequested = false
             val bytes = syncClient.download(
                 file.path,
@@ -400,6 +413,16 @@ class SyncEngine(context: Context) {
             val key = "$stamp:${item.path}"
             if (key in uploadedKeys) return@forEach
             if (item.path in cancelledPaths) return@forEach
+            if (item.path in manifest.cancelled) {
+                // 电脑端已经标记取消：不传，并记住
+                if (item.path !in cancelledPaths) {
+                    cancelledPaths.add(item.path)
+                    CancelStore.record(appContext, item.path, stamp)
+                    TransferHub.markCancelled(item.path, TransferCancelRegistry.Source.PEER)
+                    log("电脑端已取消 ${item.path}，本次同步不再重试")
+                }
+                return@forEach
+            }
             val remote = manifest.files.firstOrNull { it.path == item.path }
             if (remote != null && remote.size == item.size) {
                 val diff = item.document.lastModified() - remote.mtime

@@ -1,5 +1,6 @@
 package com.android_tools.app.sync
 
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedInputStream
 import java.net.HttpURLConnection
@@ -18,6 +19,8 @@ data class RemoteFile(
 data class RemoteManifest(
     val version: String,
     val files: List<RemoteFile>,
+    /** 电脑端取消过的文件（和蓝牙清单的 c 字段等价） */
+    val cancelled: Set<String> = emptySet(),
 )
 
 /** 同步日志里的一条记录。 */
@@ -84,9 +87,35 @@ class SyncClient(baseAddress: String) {
                     mtime = item.optLong("mtime"),
                 )
             }
-            RemoteManifest(version = json.optString("version"), files = files)
+            val cancelledArray = json.optJSONArray("c")
+            val cancelled = HashSet<String>()
+            if (cancelledArray != null) {
+                for (index in 0 until cancelledArray.length()) {
+                    val path = cancelledArray.optString(index)
+                    if (path.isNotEmpty()) cancelled.add(path)
+                }
+            }
+            RemoteManifest(version = json.optString("version"), files = files, cancelled = cancelled)
         } catch (error: Exception) {
             null
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    /** 把自己的取消列表报给电脑端（等价于蓝牙的 skip 帧 / 清单 c 字段） */
+    fun reportCancelled(paths: Collection<String>): Boolean {
+        if (paths.isEmpty()) return true
+        val connection = open("/sync/cancelled", "POST") ?: return false
+        return try {
+            val body = JSONObject().put("paths", JSONArray(paths.toList())).toString().toByteArray()
+            connection.doOutput = true
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setFixedLengthStreamingMode(body.size)
+            connection.outputStream.use { it.write(body) }
+            connection.responseCode in 200..299
+        } catch (error: Exception) {
+            false
         } finally {
             connection.disconnect()
         }
